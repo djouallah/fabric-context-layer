@@ -1,5 +1,10 @@
 # fabric-context-layer
 
+**[See it running](https://djouallah.github.io/fabric-context-layer/)** - the graph of a
+real tenant: 1,798 nodes, 2,920 edges. Click a term to see the definition that won the
+ranking and the DAX behind it; terms ringed in red are defined two different ways by two
+different models.
+
 Harvest every asset in a Microsoft Fabric workspace, build a graph out of it, rank the
 competing definitions of each business term, and answer questions from the result - with
 the definition that ranks first executed against the model when the question needs a number.
@@ -268,3 +273,7 @@ and the query side says so in every answer to a conflicting term.
   id only; its lakehouse and workspace stay unknown until that workspace is harvested.
 - Only the workspaces you harvest are in the graph. A reference to anything outside them
   shows as unresolved or external.
+
+## Licence
+
+MIT - see [LICENSE](LICENSE).
