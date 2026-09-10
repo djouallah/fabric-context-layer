@@ -187,7 +187,7 @@ code{font-family:"IBM Plex Mono",monospace;font-size:.92em;color:var(--accent)}
     <aside class="rail">
       <div class="grp">
         <p class="lbl">Find</p>
-        <input class="search" id="q" type="search" placeholder="Search names…" autocomplete="off">
+        <input class="search" id="q" type="search" placeholder="Search a measure or term…" autocomplete="off">
         <ul class="hits" id="hits"></ul>
       </div>
       <div class="grp">
@@ -493,10 +493,28 @@ cv.addEventListener("click", function(ev){
 
 var inspect = document.getElementById("inspect");
 function emptyPanel(){
+  // 32 measures in ~1800 nodes are unfindable by clicking. The terms whose definitions
+  // disagree are both the most interesting thing here and the natural way in, so the
+  // empty panel lists them rather than explaining that they exist.
+  var contested = DATA.nodes.filter(function(n){ return n.k === "term" && n.c; })
+                            .sort(function(a,b){ return (b.d||0) - (a.d||0); });
+  var startHere = "";
+  if(contested.length){
+    startHere = "<div class=\"rel\"><h3>Start here — definitions that disagree"+
+                "<em>"+contested.length+"</em></h3><ul>";
+    contested.forEach(function(n){
+      startHere += "<li><button type=\"button\" data-i=\""+n.i+"\" style=\"--c:"+
+        kcol(n.k)+"\"><span class=\"dot\"></span><span class=\"nm\">"+esc(n.n)+
+        "</span><span class=\"k\">"+n.d+" defs</span></button></li>";
+    });
+    startHere += "</ul></div>";
+  }
   inspect.innerHTML =
     "<div class=\"grp\"><p class=\"lbl\">Inspector</p></div>"+
-    "<p class=\"empty\">Click any node to see what it connects to. Terms ringed in red are "+
-    "defined two different ways by two different models.</p>"+
+    "<p class=\"empty\">Click a node, or search a name, to see what it connects to and "+
+    "the DAX behind it. Terms ringed in red are defined two different ways by two "+
+    "different models.</p>"+
+    startHere+
     "<div class=\"note\"><b>What is here.</b> Every item in <code>sqlengines</code> and "+
     "<code>aemodev</code>, the tables they read and write, and the measures that define each "+
     "business term. Harvested from Fabric and ranked, not authored by anyone.</div>"+
