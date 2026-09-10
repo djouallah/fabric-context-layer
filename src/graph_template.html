@@ -103,6 +103,13 @@ h1{font-family:"IBM Plex Sans Condensed","IBM Plex Sans",sans-serif;font-weight:
              white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hits button:hover{background:var(--sunk)}
 .hits .k{color:var(--ink-3);font-family:"IBM Plex Mono",monospace;font-size:10px}
+.dax{margin:0;padding:9px 11px;background:var(--sunk);border:1px solid var(--line);
+     border-radius:5px;font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:11px;
+     line-height:1.5;color:var(--ink);white-space:pre-wrap;word-break:break-word;
+     overflow-x:auto;max-height:260px}
+.desc{margin:0 0 8px;color:var(--ink-2);font-size:12px;line-height:1.5}
+.rankline{margin:0 0 8px;color:var(--ink-3);font-size:11px;
+          font-family:"IBM Plex Mono",ui-monospace,monospace}
 
 .stage{position:relative;min-width:0;background:var(--bg)}
 canvas{display:block;width:100%;height:100%;cursor:grab}
@@ -322,7 +329,10 @@ function build(keepPos){
 
   nodes = DATA.nodes.filter(visible).map(function(n){
     var p = prev[n.i];
+    // dax/desc/rk/sc/own ride along so the inspector can show what a measure computes.
+    // The field is 'dax', not 'x' - d3 owns x and y as the simulation's coordinates.
     return {i:n.i, k:n.k, n:n.n, w:n.w, c:n.c, d:n.d, deg:0,
+            dax:n.dax, desc:n.desc, rk:n.rk, sc:n.sc, own:n.own,
             x: p?p.x:undefined, y: p?p.y:undefined};
   });
   var byId = {};
@@ -510,6 +520,20 @@ function select(n){
     " connection"+(nb.length===1?"":"s")+"</p>"+
     (selected.c ? "<span class=\"flag\">"+selected.d+" definitions disagree</span>" : "")+
     "</div>";
+
+  // What the measure actually computes. For a term this is the definition that won the
+  // ranking, which is the whole point of the layer - the graph says what connects to what,
+  // the expression says what it means.
+  if(selected.desc || selected.dax){
+    h += "<div class=\"rel\"><h3>"+(selected.k === "term" ? "Ranked #1 definition"
+                                                          : "Definition")+"</h3>";
+    if(selected.desc) h += "<p class=\"desc\">"+esc(selected.desc)+"</p>";
+    if(selected.rk)   h += "<p class=\"rankline\">rank "+selected.rk+
+                           " · score "+selected.sc+"</p>";
+    if(selected.own)  h += "<p class=\"rankline\">in "+esc(selected.own)+"</p>";
+    if(selected.dax)  h += "<pre class=\"dax\">"+esc(selected.dax)+"</pre>";
+    h += "</div>";
+  }
 
   Object.keys(byRel).sort(function(a,b){ return byRel[b].length - byRel[a].length; })
     .forEach(function(r){

@@ -20,12 +20,32 @@ TEMPLATE = os.path.join(HERE, "graph_template.html")
 # dropping them, so the count stays honest.
 _STRUCTURAL = {"contains"}
 
+# A DAX expression is usually a line or two; a generated one can be enormous. The page is
+# a map, not an editor - past this it is truncated and the reader goes to the wiki.
+EXPRESSION_LIMIT = 2000
+
+
+def _clip(text, limit: int = EXPRESSION_LIMIT):
+    if text is None:
+        return None
+    text = str(text).strip()
+    return text if len(text) <= limit else text[:limit] + '\n... (truncated)'
+
 
 def payload(con) -> Dict:
     nodes = con.execute("SELECT id, kind, name, workspace FROM nodes").fetchall()
     edges = con.execute("SELECT src, dst, rel FROM edges").fetchall()
     terms = {t[0]: t for t in con.execute(
         "SELECT term_id, label, n_definitions, conflicting FROM terms").fetchall()}
+    # The DAX behind each definition, so a measure shows what it actually computes and a
+    # term shows the expression that won the ranking.
+    defs = {d[0]: d for d in con.execute(
+        "SELECT def_id, expression, description, rank, score, term_id, owner_item_name "
+        "FROM definitions").fetchall()}
+    top_def = {}
+    for d in defs.values():
+        if d[3] == 1:
+            top_def[d[5]] = d
 
     ids = {n[0] for n in nodes}
     rels: Dict[str, set] = {n[0]: set() for n in nodes}
@@ -45,6 +65,19 @@ def payload(con) -> Dict:
             node["d"] = term[2]
             if term[3]:
                 node["c"] = 1
+            best = top_def.get(term[0])
+            if best:
+                node["dax"] = _clip(best[1])
+                node["own"] = best[6]         # the model the winning definition lives in
+                if best[2]:
+                    node["desc"] = _clip(best[2], 400)
+        d = defs.get(nid)
+        if d:
+            node["dax"] = _clip(d[1])
+            node["rk"] = d[3]
+            node["sc"] = round(float(d[4] or 0), 2)
+            if d[2]:
+                node["desc"] = _clip(d[2], 400)
         idx[nid] = node["i"]
         out_nodes.append(node)
 
