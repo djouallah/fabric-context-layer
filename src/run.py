@@ -167,6 +167,7 @@ def _wiki(args, con=None) -> None:
 
 
 def _viz(args, con=None) -> None:
+    import shutil
     import viz
     _work_dir, _r, _b, _w, graph_html = _paths(args)
     own = con is None
@@ -175,6 +176,14 @@ def _viz(args, con=None) -> None:
     if own:
         con.close()
     print("wrote " + out + " (" + str(os.path.getsize(out) // 1024) + " KB)")
+    # A second copy inside the repo, for publishing the graph as a static page. It is the
+    # one thing the repo holds that IS harvested content, so it is opt-in per run.
+    copy_to = getattr(args, "copy_to", None)
+    if copy_to:
+        dest = copy_to if os.path.isabs(copy_to) else os.path.join(common.ROOT, copy_to)
+        os.makedirs(os.path.dirname(dest) or ".", exist_ok=True)
+        shutil.copyfile(out, dest)
+        print("copied to " + dest)
     _push(args, ["graph.html"])
 
 
@@ -336,6 +345,9 @@ def main(argv=None) -> None:
     w.set_defaults(func=_wiki)
 
     v = sub.add_parser("viz", help="the published context -> graph.html, then Files/")
+    v.add_argument("--copy-to", default=None,
+                   help="also write the html here, relative to the repo - e.g. "
+                        "docs/index.html to publish it as a GitHub Page")
     v.set_defaults(func=_viz)
 
     p = sub.add_parser("profile", help="lakehouse columns, stats and values -> raw/*/profiles/")

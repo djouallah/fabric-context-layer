@@ -2,6 +2,7 @@ raw/
 build/
 wiki/
 graph.html
+!docs/index.html
 __pycache__/
 ask/evals/results/
 .duckrun_spill/
