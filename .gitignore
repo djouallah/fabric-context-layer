@@ -1,0 +1,17 @@
+raw/
+build/
+wiki/
+graph.html
+__pycache__/
+ask/evals/results/
+.duckrun_spill/
+# The context lives in a Fabric lakehouse; context.json says which one, and that is
+# per-tenant local state, not source.
+context.json
+
+# Personal Claude Code settings: local paths and machine state, not shared config.
+.claude/settings.local.json
+
+# The evals set is GENERATED from whichever tenant was harvested (ask evals generate),
+# so it carries that tenant's workspace and model GUIDs. Regenerable, not source.
+ask/evals/questions.yaml
