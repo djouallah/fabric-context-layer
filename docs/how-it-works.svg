@@ -1,10 +1,10 @@
 <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 980 476' width='980' height='476'>
 <style>
 text{font-family:'Segoe Print','Bradley Hand','Comic Sans MS','Chalkboard SE',cursive}
-.ink{fill:#1f2937}.soft{fill:#6b7280}.acc{fill:#b45309}
-.s{fill:none;stroke:#1f2937;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
-.sa{fill:none;stroke:#b45309;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-.ss{fill:none;stroke:#6b7280;stroke-width:1.3;stroke-linecap:round;stroke-linejoin:round}
+.ink{fill:#e5e7eb}.soft{fill:#9ca3af}.acc{fill:#fbbf24}
+.s{fill:none;stroke:#e5e7eb;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.sa{fill:none;stroke:#fbbf24;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ss{fill:none;stroke:#9ca3af;stroke-width:1.3;stroke-linecap:round;stroke-linejoin:round}
 </style>
 <text x='60.0' y='38.0' font-size='17' text-anchor='start' class='ink' transform='rotate(-0.6 60.0 38.0)'>harvest side</text>
 <text x='178.0' y='38.0' font-size='14' text-anchor='start' class='soft'>- runs on its own, nightly</text>
@@ -43,7 +43,7 @@ text{font-family:'Segoe Print','Bradley Hand','Comic Sans MS','Chalkboard SE',cu
 <path class='s' d='M229.7 329.4 L225.9 318.4'/>
 <path class='s' d='M230.7 330.6 L237.8 319.2'/>
 <path class='s' d='M229.5 330.0 L236.9 317.7'/>
-<path d='M62 334 h336 v114 h-336 z' fill='rgba(180,83,9,0.06)' stroke='none'/>
+<path d='M62 334 h336 v114 h-336 z' fill='rgba(251,191,36,0.08)' stroke='none'/>
 <path class='sa' d='M59.1 331.6 L172.6 332.6 L288.1 331.8 L400.9 333.0'/>
 <path class='sa' d='M60.9 331.7 L172.4 331.1 L285.7 331.1 L400.2 332.8'/>
 <path class='sa' d='M400.7 332.0 L400.5 372.3 L398.7 411.2 L400.8 450.6'/>
