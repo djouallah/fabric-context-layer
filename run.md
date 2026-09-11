@@ -83,9 +83,10 @@ that produced it. The first command after a build pays the pull; the rest take
 milliseconds, and a new publish makes a new name rather than a stale copy. `--refresh`
 re-pulls, `--no-cache` keeps none.
 
-Or open the repo in Claude Code and ask in words: the `fabric-context` skill follows the
-same steps (search, define, model, values, dax) and cites the ranked definition it used.
-`wiki/` still opens in Obsidian; its `CLAUDE.md` explains both routes.
+Any agent that can run a command line can drive it. The repo ships the protocol as a
+Claude Code skill (`.claude/skills/fabric-context/SKILL.md`); another agent needs only the
+same steps - search, define, model, values, dax - and to cite the ranked definition it
+used. `wiki/` still opens in Obsidian; its `CLAUDE.md` explains both routes.
 
 How a question flows:
 

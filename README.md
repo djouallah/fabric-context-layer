@@ -2,37 +2,36 @@
 
 A context layer for Microsoft Fabric, written to learn how one works.
 
-## What a context layer is
+## The idea
 
-A context layer sits above semantic models. It defines nothing itself: it reads the
-models, reports, notebooks, pipelines and usage a tenant already has, and works out from
-them what each business term means, who defines it, who uses it and what feeds it. A
-definition *is* a measure in a semantic model. When two models define the same term with
-different DAX, the layer ranks the two and picks one. When a question needs a number, the
-ranked measure is run against its own model, by name; the layer never re-derives the logic.
+A context layer sits above the semantic models and the data. It harvests the metadata a
+tenant already has - models, reports, notebooks, pipelines, usage - and builds a context
+from it: a knowledge graph of what each business term means, who defines it, who uses it
+and what feeds it. Call it an automatic ontology if you like; nobody authors it. When two
+models define the same term differently, the definitions are ranked the way web search
+ranks pages: authority, popularity, relevance, freshness.
 
-So it is only as good as the models under it. A term with no measure has no definition. A
-measure with no description, no endorsement and no report using it gives the ranking
-nothing to weigh. A context layer is what you put on top of solid semantic models, not a
-way around building them.
+An agent then reads that context instead of the raw metadata, and should answer more
+accurately for it. The agent is stateless and the model behind it does not matter: the
+ranking happened before any question was asked, so any agent that can run a command line
+gets the same rank 1 and runs the same measure. The value is in the context, not in the
+agent.
 
-This repo is a small implementation, meant to be read. The harvest is one Python file per
-step, the graph is two tables, the ranking is one SQL statement, and the query side is a
-command line an agent can drive. Run it against your own workspace and look at the graph,
-the wiki and the ranking to see what a context layer sees, and what it cannot.
+It is only as good as the models under it. A term with no measure has no definition; a
+measure nobody documented, endorsed or used gives the ranking nothing to weigh. A context
+layer goes on top of solid semantic models, not around them.
 
-**[See it running](https://djouallah.github.io/fabric-context-layer/)** on a real tenant:
-1,798 nodes, 2,920 edges. A term ringed in red is defined two different ways by two
-different models; click it to see which definition won and the DAX behind it.
+This repo is a small implementation, meant to be read: one Python file per harvest step,
+a graph of two tables, a ranking in one SQL statement, a query side that is a command
+line. **[See it running](https://djouallah.github.io/fabric-context-layer/)** on a real
+tenant: 1,798 nodes, 2,920 edges. A term ringed in red is defined two ways by two models;
+click it to see which won and the DAX behind it.
 
 ## The ranking
 
-Each measure's name normalises to a term: stop words dropped, common synonyms folded
-(`average`, `avg`, `mean`), plurals stripped, and the remaining words **sorted**, so
-`Average Price`, `Price_AVG` and `Avg Price` are one term. `src/aliases.yaml` (optional)
-pins the merges the word lists cannot make. When two measures define one term with
-different DAX, that is a conflict, and every definition of the term is scored on four
-signals:
+A measure's name normalises to a term - stop words dropped, synonyms folded, plurals
+stripped, words sorted - so `Average Price`, `Price_AVG` and `Avg Price` are one term.
+Two measures on one term with different DAX is a conflict, and every definition is scored:
 
 | signal | weight | how it is computed |
 |---|---|---|
@@ -41,27 +40,24 @@ signals:
 | relevance | 1.0 | `ln(1 + reports) + 0.25 ln(1 + visuals)`; +0.5 if the name is exactly the term |
 | freshness | 0.5 | `exp(-days since the owning item changed / 180)` |
 
-Rank 1 is the definition. The weights are in `src/graph.py` and are hand-picked, not
-learned. **Rank is not correctness.** A popular, certified, wrong definition still ranks
-first. The wiki says so on every term page, and the query side says so in every answer to
-a conflicting term.
+Rank 1 is the definition. The weights are in `src/graph.py`, hand-picked, not learned.
+**Rank is not correctness.** A popular, certified, wrong definition still ranks first, and
+every answer to a conflicting term says so in one line.
 
-What the query side does with it: `search` finds the term by any of its spellings,
-`define` returns its definitions ranked, and `dax` runs a query that calls rank 1 by name
-on the model that owns it. The answer gives the number first, then the measure, model,
-rank and score it came from, then a confidence read off the gap between rank 1 and
-rank 2. A conflict is one line in the answer, not a menu. The full protocol is in
-[ask/README.md](ask/README.md) and the `fabric-context` skill.
+When a question needs a number, the agent runs rank 1 by name against the model that owns
+it - never a re-derivation of its logic - and answers with the number, then the measure,
+model, rank and score, then a confidence read off the gap to rank 2. The protocol is in
+[ask/README.md](ask/README.md).
 
 ## How it works
 
-Two sides that never call each other. The harvest runs on its own, nightly; an agent asks
-whenever it likes; they meet at one Fabric lakehouse.
+The harvest runs on its own, nightly. An agent asks whenever. They meet at one Fabric
+lakehouse and never call each other.
 
 ```
    harvest side - runs on its own, nightly            query side - runs when asked
 
-Fabric workspace                                      agent (Claude Code + the skill)
+Fabric workspace                                        any agent, stateless
   models, reports, notebooks,                           "what was avg price in NSW?"
   pipelines, usage, query log                                     |
          |                                                        v
@@ -79,11 +75,10 @@ Fabric workspace                                      agent (Claude Code + the s
                                                        number + source + confidence
 ```
 
-The repo holds Python and no data. One lakehouse holds the whole context: the ranked graph
+The repo holds Python and no data. The lakehouse holds the whole context: the ranked graph
 as Delta tables under `Tables/`, and what it was built from and rendered into under
-`Files/` - the harvested JSON, the parsed edges, the wiki, the graph page. The query side
-imports nothing from `src/`; the published tables are the only link between the two, and
-`python -m ask contract` checks they are there.
+`Files/`. The query side imports nothing from `src/`; the published tables are the only
+link, and `python -m ask contract` checks they are there.
 
 Running it, asking it, the nightly refresh, what is harvested, the graph schema, what it
 needs and the known limits: **[run.md](run.md)**.
