@@ -3,8 +3,8 @@ handwriting font stack, deterministic (seeded). Regenerate with
 
     python docs/sketch.py
 
-after changing the flow; it writes docs/how-it-works-dark.svg, the dark variant, which
-is the only one the README uses."""
+after changing the flow; it writes docs/how-it-works-dark.svg: light ink on a dark card,
+the ground baked in so it looks the same on a light page and a dark one."""
 import random, os
 
 FONT = "'Segoe Print','Bradley Hand','Comic Sans MS','Chalkboard SE',cursive"
@@ -81,7 +81,10 @@ def build(dark):
            ".s{fill:none;stroke:%s;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}" % ink,
            ".sa{fill:none;stroke:%s;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}" % accent,
            ".ss{fill:none;stroke:%s;stroke-width:1.3;stroke-linecap:round;stroke-linejoin:round}" % soft,
-           "</style>"]
+           "</style>",
+           # the dark ground is baked in, so the sketch is the same dark card on any
+           # page - GitHub light, GitHub dark, a VS Code preview.
+           "<rect x='0' y='0' width='%d' height='%d' rx='14' fill='#1f1f1f'/>" % (W, H)]
 
     def paths(ds, cls="s"):
         for d in ds:
