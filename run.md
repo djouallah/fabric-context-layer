@@ -1,11 +1,34 @@
 # Running fabric-context-layer
 
-The operational side. The [README](README.md) has the idea and the ranking.
+The operational side. The [README](README.md) has the idea.
 
 Work happens in a folder outside the repo, one per context, under
 `%LOCALAPPDATA%\fabric-context` (`FABRIC_CONTEXT_CACHE` moves it). `context.json` at the
 repo root records which lakehouse the context went into; it is an address, not content,
 and both sides read it.
+
+The context is not another item. There is one per tenant, ranked per domain, built by the
+platform and hidden; an agent never needs its address. This POC keeps it in a lakehouse
+because that is the durable store it can write to, and `context.json` stands in for
+discovery. The repo holds code, no data: one Python file per harvest step, a two-table
+graph, the ranking in one SQL statement. It is meant to be read.
+
+## The ranking
+
+Measure names normalise to terms (`Average Price`, `Price_AVG`, `Avg Price` are one term).
+Two measures on one term with different DAX is a conflict; every definition is scored:
+
+| signal | weight | from |
+|---|---|---|
+| authority | 2.0 | certified 2, promoted 1; +0.5 documented; +0.5 in a model, not a report |
+| popularity | 1.5 | `ln(1 + opens of its reports + query-log evaluations + its model's opens, queries, refreshes)`, over 28 days |
+| relevance | 1.0 | `ln(1 + reports) + 0.25 ln(1 + visuals)`; +0.5 exact name |
+| freshness | 0.5 | `exp(-days since the owner changed / 180)` |
+
+Rank 1 is the definition; a number is always rank 1 run by name on its own model, never
+re-derived. Weights are hand-picked, in `src/graph.py`. **Rank is not correctness** - a
+popular, certified, wrong definition still wins, and every answer to a conflicting term
+says so in one line.
 
 ## Run it
 

@@ -34,6 +34,11 @@ Questions about the tenant's terms, models, tables, lineage, usage or numbers go
 the `fabric-context` skill (`.claude/skills/fabric-context/SKILL.md`), which uses
 `python -m ask`. Do not answer such questions from memory or by reading `raw/` directly.
 
+**Docs invariant:** `README.md` stays super succinct and high level - the idea, the
+premises, the hook, the diagram, one pointer line. Every detail goes in `run.md`: how to
+run it, the ranking, the schema, what is harvested, the limits. Never grow the README to
+explain something; put it in run.md.
+
 Working on the code: `python src/selftest.py` runs the harvest side end to end on a
 synthetic tenant, publishing to a temp folder so it needs no network, and must stay green;
 `python -m ask contract` must stay `ok` after any change to what `src/graph.py` publishes.
