@@ -47,7 +47,7 @@ says so in one line.
 The harvest runs nightly on its own. An agent asks whenever. They meet at the context and
 never call each other.
 
-![The harvest side reads a Fabric workspace, builds and ranks the graph, and publishes it as the context. Any stateless agent searches and defines a term from that context, runs rank 1 as DAX on the model that owns it, and answers with the number, its source and a confidence.](docs/how-it-works.svg)
+![The harvest side reads a Fabric workspace, builds and ranks the graph, and publishes it as the context. Any stateless agent searches and defines a term from that context, runs rank 1 as DAX on the model that owns it, and answers with the number, its source and a confidence.](docs/how-it-works-dark.svg)
 
 The context is not another item. There is one per tenant, ranked per domain, built by the
 platform and hidden; an agent never needs its address. This POC keeps it in a lakehouse

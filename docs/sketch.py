@@ -3,8 +3,8 @@ handwriting font stack, deterministic (seeded). Regenerate with
 
     python docs/sketch.py
 
-after changing the flow; it writes docs/how-it-works.svg. The strokes are pale so it
-reads as pencil on a light page and as light ink on a dark one."""
+after changing the flow; it writes docs/how-it-works-dark.svg, the dark variant, which
+is the only one the README uses."""
 import random, os
 
 FONT = "'Segoe Print','Bradley Hand','Comic Sans MS','Chalkboard SE',cursive"
@@ -160,7 +160,7 @@ def build(dark):
 
 
 if __name__ == "__main__":
-    dest = os.path.join(os.path.dirname(os.path.abspath(__file__)), "how-it-works.svg")
+    dest = os.path.join(os.path.dirname(os.path.abspath(__file__)), "how-it-works-dark.svg")
     with open(dest, "w", encoding="utf-8") as f:
         f.write(build(dark=True))
     print("wrote", dest)
