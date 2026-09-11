@@ -27,7 +27,7 @@ calling each other.
 
 **[See it on a real tenant](https://djouallah.github.io/fabric-context-layer/)**
 
-![The harvest side reads a Fabric workspace, builds and ranks the graph, and publishes it as the context. Any stateless agent searches and defines a term from that context, runs rank 1 as DAX on the model that owns it, and answers with the number, its source and a confidence.](docs/how-it-works-dark.svg)
+![Inside the platform, the harvest side reads a Fabric workspace, builds and ranks the graph, and publishes it as the context. Outside it, any stateless agent - on a laptop, in a notebook, in CI, in a chat - searches and defines a term from that context, runs rank 1 as DAX on the model that owns it, and answers with the number, its source and a confidence.](docs/how-it-works-dark.svg)
 
 The ranking, running it, the nightly refresh, what is harvested, the schema, the limits: **[run.md](run.md)**.
 

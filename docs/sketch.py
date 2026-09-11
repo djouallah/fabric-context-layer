@@ -38,6 +38,15 @@ def rough_rect(r, x, y, w, h):
     return ds
 
 
+def dashed_rect(r, x, y, w, h):
+    """One wobbly pass around a rectangle - a boundary, not a box."""
+    ds = []
+    for a, b, c, d in ((x, y, x + w, y), (x + w, y, x + w, y + h),
+                       (x + w, y + h, x, y + h), (x, y + h, x, y)):
+        ds.append(rough_line(r, a, b, c, d, 4)[0])
+    return ds
+
+
 def arrow(r, x1, y1, x2, y2, bend=0.0):
     """A slightly curved arrow with a hand-drawn head."""
     mx, my = (x1 + x2) / 2, (y1 + y2) / 2
@@ -81,6 +90,7 @@ def build(dark):
            ".s{fill:none;stroke:%s;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}" % ink,
            ".sa{fill:none;stroke:%s;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}" % accent,
            ".ss{fill:none;stroke:%s;stroke-width:1.3;stroke-linecap:round;stroke-linejoin:round}" % soft,
+           ".sb{fill:none;stroke:%s;stroke-width:1.3;stroke-linecap:round;stroke-dasharray:11 9}" % soft,
            "</style>",
            # the dark ground is baked in, so the sketch is the same dark card on any
            # page - GitHub light, GitHub dark, a VS Code preview.
@@ -91,10 +101,15 @@ def build(dark):
             out.append("<path class='%s' d='%s'/>" % (cls, d))
 
     # column titles
-    out.append(text(60, 38, "harvest side", 17, rot=-0.6))
-    out.append(text(178, 38, "- runs on its own, nightly", 14, cls="soft"))
-    out.append(text(560, 38, "query side", 17, rot=0.5))
-    out.append(text(662, 38, "- runs when asked", 14, cls="soft"))
+    out.append(text(60, 34, "harvest side", 17, rot=-0.6))
+    out.append(text(178, 34, "- runs on its own, nightly", 14, cls="soft"))
+    out.append(text(560, 34, "query side", 17, rot=0.5))
+    out.append(text(662, 34, "- anywhere, when asked", 14, cls="soft"))
+
+    # the platform boundary: everything the harvest touches is within it
+    paths(dashed_rect(r, 44, 50, 380, 408), "sb")
+    out.append(text(414, 272, "inside the platform", 13, anchor="middle", cls="soft",
+                    italic=True, rot=-90))
 
     # A: Fabric workspace
     paths(rough_rect(r, 60, 62, 340, 92))
@@ -129,7 +144,7 @@ def build(dark):
     paths(rough_rect(r, 560, 62, 360, 92))
     out.append(text(578, 90, "any agent, stateless", 17))
     out.append(text(578, 118, "“what was avg price in NSW?”", 15, cls="soft", italic=True))
-    out.append(text(578, 140, "which model it runs on does not matter", 12, cls="soft"))
+    out.append(text(578, 140, "a laptop, a notebook, CI, a chat - outside", 12, cls="soft"))
 
     # D -> E
     paths(arrow(r, 740, 156, 740, 206, bend=-4))
@@ -141,7 +156,7 @@ def build(dark):
 
     # E -> C  (reads)
     paths(arrow(r, 578, 236, 404, 372, bend=28), "ss")
-    out.append(text(470, 284, "reads", 13, cls="soft", rot=-8))
+    out.append(text(474, 288, "reads in, from outside", 13, cls="soft", rot=-8))
 
     # E -> F
     paths(arrow(r, 740, 254, 740, 318, bend=5))
