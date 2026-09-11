@@ -20,13 +20,12 @@ So far the industry splits on who settles a conflict: the platform, by scoring i
 which scales with usage, or a person, by reviewing it, which scales with reviewer time; I
 prefer the first, time will tell.
 
-Ask three semantic models what *average price* is and you get three answers. This harvests
-a Microsoft Fabric tenant, finds every definition of every business term, and ranks them
-the way web search ranks pages. **[See it on a real tenant](https://djouallah.github.io/fabric-context-layer/)**:
-a term ringed in red is defined two ways; click it to see which won and the DAX behind it.
+The harvest delivers one thing: a knowledge graph of the tenant - every term, its
+competing definitions ranked, and what feeds what. That graph is the context. It runs
+nightly on its own, an agent asks whenever, and the two meet at the graph without ever
+calling each other.
 
-The harvest runs nightly on its own. An agent asks whenever. They meet at the context and
-never call each other.
+**[See it on a real tenant](https://djouallah.github.io/fabric-context-layer/)**
 
 ![The harvest side reads a Fabric workspace, builds and ranks the graph, and publishes it as the context. Any stateless agent searches and defines a term from that context, runs rank 1 as DAX on the model that owns it, and answers with the number, its source and a confidence.](docs/how-it-works-dark.svg)
 
