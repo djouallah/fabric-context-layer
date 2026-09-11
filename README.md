@@ -44,30 +44,19 @@ says so in one line.
 
 ## How it works
 
-The harvest runs nightly on its own. An agent asks whenever. They meet at one lakehouse
-and never call each other. The repo holds code, no data: one Python file per harvest step,
-a two-table graph, the ranking in one SQL statement. It is meant to be read.
+The harvest runs nightly on its own. An agent asks whenever. They meet at the context and
+never call each other.
 
-```
-   harvest side - runs on its own, nightly            query side - runs when asked
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/how-it-works-dark.svg">
+  <img src="docs/how-it-works.svg" width="980" alt="The harvest side reads a Fabric workspace, builds and ranks the graph, and publishes it as the context. Any stateless agent searches and defines a term from that context, runs rank 1 as DAX on the model that owns it, and answers with the number, its source and a confidence.">
+</picture>
 
-Fabric workspace                                        any agent, stateless
-  models, reports, notebooks,                           "what was avg price in NSW?"
-  pipelines, usage, query log                                     |
-         |                                                        v
-         v  python src/run.py all                           python -m ask
-     raw/ -> graph -> rank                             search -> define -> rank 1
-         |                                                        |
-         v                                                        |
-+-----------------------------+         reads                     |
-|  one Fabric lakehouse       | <---------------------------------+
-|  Tables/  the ranked graph  |                                   |
-|  Files/   raw, wiki, graph  |                                   v  DAX, calling rank 1 by name
-+-----------------------------+                       the semantic model that owns it
-                                                                  |
-                                                                  v
-                                                       number + source + confidence
-```
+The context is not another item. There is one per tenant, ranked per domain, built by the
+platform and hidden; an agent never needs its address. This POC keeps it in a lakehouse
+because that is the durable store it can write to, and `context.json` stands in for
+discovery. The repo holds code, no data: one Python file per harvest step, a two-table
+graph, the ranking in one SQL statement. It is meant to be read.
 
 Running it, the nightly refresh, what is harvested, the schema, the limits: **[run.md](run.md)**.
 
