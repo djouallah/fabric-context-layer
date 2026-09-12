@@ -15,10 +15,11 @@ from common import HERE
 TEMPLATE = os.path.join(HERE, "graph_template.html")
 
 
-# A lakehouse table whose only edge is the one to its own lakehouse tells you nothing about
-# lineage. There are hundreds of them; the page hides them behind a toggle rather than
-# dropping them, so the count stays honest.
-_STRUCTURAL = {"contains"}
+# A node nothing in the tenant refers to - a sandbox lakehouse's tables, an empty
+# auto-created model - tells you nothing about lineage. There are hundreds of them, and
+# graph.py has already marked them tier 3. The page hides them behind a toggle rather
+# than dropping them, so the count on screen stays honest.
+TAIL_TIER = 3
 
 # A DAX expression is usually a line or two; a generated one can be enormous. The page is
 # a map, not an editor - past this it is truncated and the reader goes to the wiki.
@@ -33,7 +34,7 @@ def _clip(text, limit: int = EXPRESSION_LIMIT):
 
 
 def payload(con) -> Dict:
-    nodes = con.execute("SELECT id, kind, name, workspace FROM nodes").fetchall()
+    nodes = con.execute("SELECT id, kind, name, workspace, tier FROM nodes").fetchall()
     edges = con.execute("SELECT src, dst, rel FROM edges").fetchall()
     terms = {t[0]: t for t in con.execute(
         "SELECT term_id, label, n_definitions, conflicting FROM terms").fetchall()}
@@ -48,17 +49,12 @@ def payload(con) -> Dict:
             top_def[d[5]] = d
 
     ids = {n[0] for n in nodes}
-    rels: Dict[str, set] = {n[0]: set() for n in nodes}
-    for src, dst, rel in edges:
-        rels[src].add(rel)
-        if dst in ids:
-            rels[dst].add(rel)
 
     idx: Dict[str, int] = {}
     out_nodes: List[Dict] = []
-    for nid, kind, name, workspace in nodes:
+    for nid, kind, name, workspace, tier in nodes:
         node = {"i": len(out_nodes), "k": kind, "n": name, "w": workspace or ""}
-        if kind == "lakehouse_table" and rels[nid] <= _STRUCTURAL:
+        if (tier or 1) >= TAIL_TIER:
             node["bare"] = 1
         term = terms.get(nid.split(":", 1)[1]) if kind == "term" else None
         if term:

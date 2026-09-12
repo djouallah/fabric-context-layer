@@ -83,8 +83,12 @@ def _p_scope(s):
     print("models (execute with workspace_id + dataset_id):")
     _rows(s["models"], ["name", "workspace", "item_id", "workspace_id", "n_measures", "n_tables",
                         "endorsement"])
-    print("stores:")
-    _rows(s["stores"], ["name", "kind", "workspace", "item_id", "n_tables", "external"])
+    if s.get("empty_models"):
+        print("  (" + str(s["empty_models"]) + " empty auto-created models not listed: "
+              "no measures, no tables, nothing to query)")
+    print("stores (n_used: tables a model, notebook or pipeline touches):")
+    _rows(s["stores"], ["name", "kind", "workspace", "item_id", "n_used", "n_tables",
+                        "external"])
     print("counts: " + ", ".join(k + "=" + str(v) for k, v in s["counts"].items()))
     print("optional tables: " + ", ".join(k + ("" if v else " (missing)")
                                           for k, v in s["optional_tables"].items()))
@@ -94,7 +98,8 @@ def _p_search(s):
     if not s["hits"]:
         print("nothing above the threshold for " + repr(s["query"]))
         return
-    _rows(s["hits"], ["score", "kind", "name", "parent", "workspace", "term_id", "why", "id"])
+    _rows(s["hits"], ["score", "kind", "name", "parent", "workspace", "tier", "term_id",
+                      "why", "id"])
 
 
 def _p_define(d):

@@ -49,7 +49,7 @@ class Wiki:
 
     def _load(self) -> None:
         cols = ("id, kind, name, workspace, item_id, parent_id, description, endorsement, "
-                "owner, modified_at, attrs")
+                "owner, modified_at, attrs, tier")
         for row in self.con.execute("SELECT " + cols + " FROM nodes").fetchall():
             node = dict(zip(cols.replace(" ", "").split(","), row))
             self.nodes[node["id"]] = node
@@ -65,11 +65,19 @@ class Wiki:
         for nid, node in self.nodes.items():
             if node["kind"] == "term":
                 self.slug[nid] = nid.split(":", 1)[1]
-            elif node["kind"] in PAGE_FOLDER:
+            elif node["kind"] in PAGE_FOLDER and not self.is_tail(nid):
                 key = node.get("item_id") or nid
                 self.slug[nid] = (self._table_slug(node)
                                   if node["kind"] == "lakehouse_table"
                                   else page_slug(node["name"], key))
+
+    def is_tail(self, nid: str) -> bool:
+        """Tier 3: harvested, but nothing in the tenant refers to it (see graph._tier).
+
+        It gets no page of its own. Giving one to every table in a sandbox lakehouse
+        buries the handful that a model is actually built on. It is still listed on its
+        parent's page, still in the database, still reachable from `ask`."""
+        return (self.nodes.get(nid, {}).get("tier") or 1) >= 3
 
     def term_name(self, tid: str) -> str:
         """The top-ranked measure's own name, falling back to a title-cased id."""
@@ -179,6 +187,9 @@ def render(con, out_dir: str) -> Dict[str, int]:
 
     for nid, node in sorted(w.nodes.items()):
         kind = node["kind"]
+        if kind in PAGE_FOLDER and w.is_tail(nid):
+            counts["tail"] += 1               # listed on its parent's page, not its own
+            continue
         if kind == "semantic_model":
             _model_page(w, con, nid, node)
         elif kind == "report":
@@ -396,9 +407,20 @@ def _store_page(w: Wiki, nid: str, node: dict) -> None:
         body += ["This store was not harvested: something in a harvested workspace binds to "
                  "it (" + str(Wiki._attr(node, "via", "reference")) + "), so it appears here "
                  "as a stub. Harvest its workspace to fill it in.", ""]
-    if tables:
-        body += ["## Tables", ""] + ["- " + w.link(t) for t in sorted(
-            tables, key=lambda t: w.nodes.get(t, {}).get("name", ""))] + [""]
+    by_name = sorted(tables, key=lambda t: w.nodes.get(t, {}).get("name", ""))
+    used = [t for t in by_name if not w.is_tail(t)]
+    tail = [t for t in by_name if w.is_tail(t)]
+    if used:
+        body += ["## Tables", ""] + ["- " + w.link(t) for t in used] + [""]
+    if tail:
+        # No page each: nothing in the harvested workspaces reads them, so a page would
+        # say only that. Named here so the store's inventory is still complete, and
+        # still queryable with `ask table <store>.<schema>.<name>`.
+        body += ["## Not referenced (" + str(len(tail)) + ")", "",
+                 "Harvested, but no model, notebook or pipeline in these workspaces "
+                 "reads or writes them.", "",
+                 ", ".join("`" + str(w.nodes.get(t, {}).get("name", t)) + "`"
+                           for t in tail), ""]
     users = [src for src, rel, _wt, _a in w.in_edges.get(nid, []) if rel == "uses"]
     if users:
         body += ["## Used by", ""] + ["- " + w.link(u) for u in sorted(set(users))] + [""]
@@ -511,8 +533,16 @@ def _workspace_page(w: Wiki, nid: str, node: dict) -> None:
     body = ["# " + node["name"], ""]
     for kind in sorted(by_kind):
         rows = sorted(by_kind[kind], key=lambda x: w.nodes[x]["name"])
+        used = [r for r in rows if not w.is_tail(r)]
+        tail = [r for r in rows if w.is_tail(r)]
         body += ["## " + kind.replace("_", " ") + " (" + str(len(rows)) + ")", ""]
-        body += ["- " + w.link(r) for r in rows] + [""]
+        body += ["- " + w.link(r) for r in used]
+        if tail:
+            # An empty auto-created model, or a store whose tables nobody reads: named,
+            # so the workspace inventory is complete, but not worth a page.
+            body += ["", "Empty or unreferenced, no page: "
+                     + ", ".join("`" + w.nodes[r]["name"] + "`" for r in tail)]
+        body.append("")
     w.write("workspace", w.slug[nid], _front(w, nid, node, {}), body)
 
 
@@ -534,10 +564,15 @@ def _front(w: Wiki, nid: str, node: dict, extra: dict) -> dict:
 def _index_page(w: Wiki, con) -> None:
     body = ["# Context layer", "",
             "Harvested from Fabric and ranked. Start at a term, then follow the links.", ""]
-    body += ["## What is in here", "", "| kind | count |", "|------|-------|"]
-    for kind, count in con.execute(
-            "SELECT kind, count(*) FROM nodes GROUP BY 1 ORDER BY 2 DESC").fetchall():
-        body.append("| " + kind.replace("_", " ") + " | " + str(count) + " |")
+    body += ["## What is in here", "",
+             "`with a page` is what something in these workspaces actually refers to; "
+             "the rest was harvested and is listed on its parent's page.", "",
+             "| kind | with a page | harvested |", "|------|-------------|-----------|"]
+    for kind, shown, count in con.execute(
+            "SELECT kind, count(*) FILTER (WHERE tier < 3), count(*) "
+            "FROM nodes GROUP BY 1 ORDER BY 3 DESC").fetchall():
+        body.append("| " + kind.replace("_", " ") + " | " + str(shown)
+                    + " | " + str(count) + " |")
     body.append("")
 
     top = con.execute("SELECT term_id, label, n_definitions, views, conflicting FROM terms "
@@ -572,12 +607,19 @@ def _index_page(w: Wiki, con) -> None:
 def _claude_page(w: Wiki, con) -> None:
     n_terms = con.execute("SELECT count(*) FROM terms").fetchone()[0]
     n_conf = con.execute("SELECT count(*) FROM terms WHERE conflicting").fetchone()[0]
+    n_tail = con.execute("SELECT count(*) FROM nodes WHERE tier >= 3").fetchone()[0]
     text = """# How to answer questions from this folder
 
 This is a **context layer**: it was harvested automatically from Microsoft Fabric, not
 written by hand. Nobody authored these pages, and nothing here was reviewed.
 
 There are {terms} business terms, {conf} of which have definitions that disagree.
+
+**Not everything harvested has a page here.** {tail} nodes - lakehouse tables no model,
+notebook or pipeline touches, empty models Fabric auto-created beside a lakehouse, SQL
+endpoints - are listed on their store or workspace page and nowhere else. They are still
+in the database: `python -m ask table <store>.<schema>.<name>` and `ask sql` read them.
+The absence of a page means nothing in these workspaces refers to it, not that it is gone.
 
 ## Two ways in
 
@@ -627,7 +669,7 @@ picking one.
 - *What feeds X?* - the "Upstream" list on the term page, or `lineage`.
 - *What is X for <filter>?* - `model` for the schema and filter values, then `dax` calling
   the ranked measure by name. Only the query side does this; the pages hold no numbers.
-""".format(terms=n_terms, conf=n_conf)
+""".format(terms=n_terms, conf=n_conf, tail=n_tail)
     write_text(os.path.join(w.out, "CLAUDE.md"), text)
 
 

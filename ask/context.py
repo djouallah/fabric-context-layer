@@ -299,6 +299,18 @@ def has_table(con, name: str) -> bool:
     return name in _tables(con)
 
 
+def has_column(con, table: str, column: str) -> bool:
+    return column in (_tables(con).get(table) or ())
+
+
+def tiered(con) -> bool:
+    """Whether the publish marks its long tail (nodes.tier, schema_version 4 and up).
+
+    An older publish has no such column; everything it holds is then treated as tier 1,
+    which is what it meant before the column existed."""
+    return has_column(con, "nodes", "tier")
+
+
 def meta(con) -> Dict[str, str]:
     if not has_table(con, "meta"):
         return {}
@@ -328,6 +340,10 @@ def contract(con, path: str = "") -> Dict[str, Any]:
     return {"db": path, "ok": ok, "required": required, "optional": optional,
             "schema_version": m.get("schema_version"), "built_at": m.get("built_at") or _mtime(path),
             "profiled_columns": int(profiled),
+            # nodes.tier arrived in schema_version 4; an older publish simply has no long
+            # tail marked, and every reader here treats it as all tier 1.
+            "tiered": tiered(con) if "nodes" in present else False,
+            "tiers": json.loads(m["tiers"]) if m.get("tiers") else {},
             "lakehouse": where.get("lakehouse"), "workspace": where.get("workspace"),
             "published_at": where.get("published_at"),
             "local_copy": LAST_CACHE, "tables": sorted(present)}
@@ -348,6 +364,9 @@ def scope(con, path: str = "") -> Dict[str, Any]:
     workspaces = json.loads(m["workspaces"]) if m.get("workspaces") else [
         {"name": n, "id": i} for n, i in con.execute(
             "SELECT name, item_id FROM nodes WHERE kind = 'workspace' ORDER BY 1").fetchall()]
+    # An empty auto-created model answers nothing, and there are more of them than there
+    # are real ones. Count them, list the rest. See graph._tier on the harvest side.
+    tail = " AND m.tier < 3" if tiered(con) else ""
     models = [dict(zip(("name", "item_id", "workspace", "workspace_id", "endorsement",
                         "storage_mode", "n_measures", "n_tables"), r)) for r in con.execute("""
         SELECT m.name, m.item_id, m.workspace, w.item_id, m.endorsement,
@@ -356,18 +375,26 @@ def scope(con, path: str = "") -> Dict[str, Any]:
                (SELECT count(*) FROM nodes t WHERE t.parent_id = m.id AND t.kind = 'model_table')
           FROM nodes m
           LEFT JOIN nodes w ON w.kind = 'workspace' AND w.name = m.workspace
-         WHERE m.kind = 'semantic_model'
+         WHERE m.kind = 'semantic_model'""" + tail + """
          ORDER BY 7 DESC, 1""").fetchall()]
+    n_empty = con.execute(
+        "SELECT count(*) FROM nodes WHERE kind = 'semantic_model'"
+        + (" AND tier >= 3" if tiered(con) else " AND false")).fetchone()[0]
+    # `n_used` is how many of a store's tables a model, notebook or pipeline actually
+    # touches; the rest are inventory, queryable with `ask sql` but part of no lineage.
+    used = ("(SELECT count(*) FROM nodes t WHERE t.parent_id = s.id AND t.tier < 3)"
+            if tiered(con) else "(SELECT count(*) FROM nodes t WHERE t.parent_id = s.id)")
     stores = [dict(zip(("name", "kind", "item_id", "workspace", "workspace_id", "n_tables",
-                        "external"), r)) for r in con.execute("""
+                        "n_used", "external"), r)) for r in con.execute("""
         SELECT s.name, s.kind, s.item_id, s.workspace,
                coalesce(w.item_id, json_extract_string(s.attrs, '$.workspace_id')),
                (SELECT count(*) FROM nodes t WHERE t.parent_id = s.id),
+               """ + used + """,
                coalesce(TRY_CAST(json_extract_string(s.attrs, '$.external') AS BOOLEAN), false)
           FROM nodes s
           LEFT JOIN nodes w ON w.kind = 'workspace' AND w.name = s.workspace
          WHERE s.kind IN ('lakehouse', 'warehouse')
-         ORDER BY 7, 1""").fetchall()]
+         ORDER BY 8, 7 DESC, 1""").fetchall()]
     counts = {k: n for k, n in con.execute(
         "SELECT kind, count(*) FROM nodes GROUP BY 1 ORDER BY 2 DESC").fetchall()}
     n_terms, n_conf = con.execute(
@@ -377,6 +404,7 @@ def scope(con, path: str = "") -> Dict[str, Any]:
             "activity_window": {"from": m.get("activity_from"), "to": m.get("activity_to"),
                                 "days": m.get("activity_window_days")},
             "workspaces": workspaces, "models": models, "stores": stores,
+            "empty_models": n_empty,
             "terms": {"total": n_terms, "conflicting": n_conf}, "counts": counts,
             "optional_tables": {t: has_table(con, t) for t in OPTIONAL}}
 
@@ -403,7 +431,7 @@ def search(con, text: str, limit: int = 20, kinds: Optional[List[str]] = None) -
         alias_sql = """
             UNION ALL
             SELECT 'term:' || a.term_id AS id, 'alias' AS kind, a.alias AS name,
-                   NULL AS workspace, NULL AS parent_id, '' AS text
+                   NULL AS workspace, NULL AS parent_id, '' AS text, 1 AS tier
               FROM aliases a"""
     sql = """
         WITH q AS (SELECT ? AS query, ?::VARCHAR[] AS tokens),
@@ -412,7 +440,8 @@ def search(con, text: str, limit: int = 20, kinds: Optional[List[str]] = None) -
                    CASE WHEN n.kind = 'term' THEN replace(n.id[6:], '-', ' ') ELSE n.name END AS name,
                    n.workspace, n.parent_id,
                    lower(coalesce(n.description, '') || ' '
-                         || coalesce(json_extract_string(n.attrs, '$.expression'), '')) AS text
+                         || coalesce(json_extract_string(n.attrs, '$.expression'), '')) AS text,
+                   """ + ("n.tier" if tiered(con) else "1") + """ AS tier
               FROM nodes n
              WHERE n.kind IN (""" + ", ".join("?" for _ in wanted) + """)
             """ + alias_sql + """
@@ -440,7 +469,7 @@ def search(con, text: str, limit: int = 20, kinds: Optional[List[str]] = None) -
                    CASE WHEN length(c.text) > 0 AND c.text LIKE '%' || q.query || '%' THEN 0.7 ELSE 0.0 END AS s_text
               FROM cand c CROSS JOIN q
         )
-        SELECT id, kind, name, workspace, parent_id,
+        SELECT id, kind, name, workspace, parent_id, tier,
                greatest(s_exact, s_name, s_tokens, s_cover, s_text) AS score,
                CASE WHEN s_exact = 1.0 THEN 'exact name'
                     WHEN greatest(s_tokens, s_cover) >= s_name AND greatest(s_tokens, s_cover) >= s_text
@@ -456,7 +485,7 @@ def search(con, text: str, limit: int = 20, kinds: Optional[List[str]] = None) -
 
     labels = {t: l for t, l in con.execute("SELECT term_id, label FROM terms").fetchall()}
     best: Dict[str, Dict] = {}
-    for nid, kind, name, workspace, parent_id, score, why in rows:
+    for nid, kind, name, workspace, parent_id, tier, score, why in rows:
         hit = best.get(nid)
         if hit and hit["score"] >= score:
             continue
@@ -464,9 +493,14 @@ def search(con, text: str, limit: int = 20, kinds: Optional[List[str]] = None) -
         best[nid] = {"id": nid, "kind": "term" if kind == "alias" else kind,
                      "name": labels.get(term_id, name) if term_id else name,
                      "matched": name, "workspace": workspace, "parent_id": parent_id,
-                     "term_id": term_id, "score": round(float(score), 3), "why": why}
+                     "term_id": term_id, "score": round(float(score), 3), "why": why,
+                     "tier": int(tier or 1)}
+    # The tier breaks ties, it does not move the score: the thresholds a caller checks
+    # mean the same thing as before. A table nothing reads can still be found by name -
+    # it just does not outrank the one a model is built on.
     hits = sorted(best.values(),
-                  key=lambda h: (-h["score"], _KIND_ORDER.get(h["kind"], 5), h["name"]))[:limit]
+                  key=lambda h: (-h["score"], h["tier"], _KIND_ORDER.get(h["kind"], 5),
+                                 h["name"]))[:limit]
     parents = {h["parent_id"] for h in hits if h.get("parent_id")}
     if parents:
         names = {i: n for i, n in con.execute(

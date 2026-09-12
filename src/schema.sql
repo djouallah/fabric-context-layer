@@ -12,7 +12,16 @@ CREATE TABLE nodes (
     endorsement  VARCHAR,          -- 'Certified' | 'Promoted' | NULL
     owner        VARCHAR,
     modified_at  TIMESTAMP,
-    attrs        JSON
+    attrs        JSON,
+    -- How close this node sits to something anyone agreed on. Derived, not parsed:
+    -- graph.py fills it in, every loaded row starts at 1 and is demoted from there.
+    --   1  load-bearing: it defines a term, or feeds a semantic model
+    --   2  reachable: code reads or writes it, but no model is built on it
+    --   3  inventory: harvested, nothing in the tenant refers to it
+    -- Tier 3 is the long tail - a sandbox lakehouse's tables, an auto-created empty
+    -- model. It stays queryable; it just does not get a wiki page or a node on the
+    -- graph, because 685 of 750 tables nobody reads is not a map, it is a haystack.
+    tier         INTEGER DEFAULT 1
 );
 
 CREATE TABLE edges (

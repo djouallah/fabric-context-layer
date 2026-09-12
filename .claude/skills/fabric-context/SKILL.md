@@ -19,6 +19,8 @@ so and stop - do not run the harvest side yourself.
 
 0. **Scope, once per conversation**: `python -m ask scope`. Note `built_at`, the workspaces,
    and the models (their `item_id` and `workspace_id` are what `dax` executes against).
+   Empty auto-created models are counted, not listed; each store shows `n_used` (tables
+   something actually reads) beside `n_tables` (tables harvested).
 
 1. **Search** the question's nouns: `python -m ask search "<words>"`. Terms come first,
    then measures, tables, columns. If the best score is under 0.55, answer that the
@@ -89,7 +91,13 @@ so and stop - do not run the harvest side yourself.
    DAX - that measure is the agreed definition, and re-deriving it in SQL is exactly the
    thing this layer exists to stop. Fall back to SQL only when **no model covers the
    table**: `search` returns lakehouse tables and columns but no measure, or `ask table`
-   shows the table feeds no model. Say which route you used in the answer, and for a SQL
+   shows the table feeds no model.
+
+   `search` prints a `tier` per hit, and it is the same signal: **1** feeds a semantic
+   model, **2** is read or written by a notebook or pipeline, **3** is harvested and
+   nothing in these workspaces refers to it. A tier-3 hit is a SQL answer by definition -
+   no measure can cover it - so say plainly that the number has no agreed definition
+   behind it. Tier never changes a score, only the order of equal ones. Say which route you used in the answer, and for a SQL
    answer say plainly that the number has no agreed definition behind it - you computed
    it from the raw table.
 

@@ -217,9 +217,11 @@ def make_raw(raw: str) -> None:
     _w(os.path.join(ws_dir, "lakehouses", LH + ".json"),
        {"id": LH, "properties": {"sqlEndpointProperties": {"id": "99999999-9999-9999-9999-999999999999"},
                                  "oneLakeTablesPath": "abfss://x/Tables"}})
+    # scratch_tmp is read by nothing: the long tail every real tenant is mostly made of,
+    # here so the tiering in graph._tier has something to demote.
     _w(os.path.join(ws_dir, "lakehouses", LH + ".tables.json"),
        [{"schema": "dbo", "name": n, "format": "delta"}
-        for n in ("fact_sales", "dim_customer", "dim_date")])
+        for n in ("fact_sales", "dim_customer", "dim_date", "scratch_tmp")])
 
     _w(os.path.join(raw, "scanner.json"), _scanner())
 
@@ -437,6 +439,18 @@ def main() -> int:
         built = con.execute("SELECT value FROM meta WHERE key = 'built_at'").fetchone()
         check("meta has built_at", bool(built and built[0]), built)
 
+        # the tier: what nothing refers to is demoted, what a model reads is not
+        tiers = dict(con.execute(
+            "SELECT name, tier FROM nodes WHERE kind = 'lakehouse_table'").fetchall())
+        check("a table a model sources from stays tier 1", tiers.get("fact_sales") == 1, tiers)
+        check("a table nothing reads is demoted to tier 3",
+              tiers.get("scratch_tmp") == 3, tiers)
+        endpoints = con.execute("SELECT count(*) FROM nodes WHERE kind = 'sql_endpoint' "
+                                "AND tier < 3").fetchone()[0]
+        check("sql endpoints are plumbing, never tier 1", endpoints == 0, endpoints)
+        check("meta carries the tier split",
+              "tiers" in dict(con.execute("SELECT key, value FROM meta").fetchall()))
+
         print("wiki")
         pages = wiki.render(con, out)
         n_terms = con.execute("SELECT count(*) FROM terms").fetchone()[0]
@@ -444,6 +458,14 @@ def main() -> int:
         check("a page per model, report, table and notebook",
               pages.get("semantic_model") == 2 and pages.get("report") == 2
               and pages.get("lakehouse_table") == 4 and pages.get("notebook") == 1, pages)
+        check("the long tail gets no page of its own", pages.get("tail", 0) >= 1, pages)
+        check("no page for the table nothing reads",
+              not os.path.exists(os.path.join(out, "tables",
+                                              "sales_lh--22222222.dbo.scratch_tmp.md")))
+        store_page = open(os.path.join(out, "stores", "sales_lh--22222222.md"),
+                          encoding="utf-8").read()
+        check("the store page still names it", "`scratch_tmp`" in store_page
+              and "Not referenced" in store_page, store_page[-400:])
         broken = wiki.check_links(out)
         check("no broken wikilinks", not broken, broken[:5])
         term_page = os.path.join(out, "terms", "revenue.md")

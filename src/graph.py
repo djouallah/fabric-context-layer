@@ -43,7 +43,7 @@ VIEW_WINDOW_DAYS = 28
 FRESHNESS_HALFLIFE_DAYS = 180.0
 
 # Bumped when a published table or column changes shape; ask/ checks it.
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 # Activity families. Views are people opening things; runs and queries are people using
 # them another way. The harvest's own calls and storage churn are noise, not usage.
@@ -96,9 +96,9 @@ def _load(con, table: str, path: str, spec: Dict[str, str]) -> None:
         else ("TRY_CAST(" + k + " AS JSON) AS " + k) if k == "attrs" else k
         for k in spec)
     con.execute(
-        "INSERT INTO " + table + " SELECT " + cols + " FROM read_json('"
-        + path.replace("\\", "/") + "', format='newline_delimited', columns="
-        + _columns_clause(spec) + ")")
+        "INSERT INTO " + table + " (" + ", ".join(spec) + ") SELECT " + cols
+        + " FROM read_json('" + path.replace("\\", "/")
+        + "', format='newline_delimited', columns=" + _columns_clause(spec) + ")")
 
 
 def build(build_dir: str):
@@ -287,9 +287,56 @@ def _derive(con) -> None:
           FROM definitions d
          WHERE edges.src = d.def_id AND edges.rel = 'defines'""")
 
+    _tier(con)
     _meta(con)
     con.execute("CREATE INDEX IF NOT EXISTS edges_dst ON edges(dst)")
     con.execute("CREATE INDEX IF NOT EXISTS nodes_kind ON nodes(kind)")
+
+
+# Relations that make a table load-bearing, and relations that merely reach it. A store's
+# `contains` is in neither list: being harvested is not the same as being used.
+TIER1_RELS = ("sources_from",)
+TIER2_RELS = ("reads", "feeds", "references", "depends_on", "uses")
+
+
+def _tier(con) -> None:
+    """Demote the long tail: what was harvested but nothing in the tenant refers to.
+
+    The harvest stays wide on purpose - a lakehouse table list is one call per store, and
+    `ask sql` answers from tables no model covers. But most tables are read by nothing,
+    and a wiki that gives each of them a page is mostly chaff. The tier says which is
+    which; the renderers decide what to do about it, and nothing is deleted.
+
+    Everything starts at tier 1 and is demoted from there, so a kind this function has
+    never heard of keeps its page rather than silently vanishing.
+    """
+    # A lakehouse or warehouse table: 1 if a semantic model sources from it, 2 if code
+    # reads or writes it, 3 if the only thing pointing at it is the store that holds it.
+    con.execute(
+        "UPDATE nodes SET tier = 3 WHERE kind = 'lakehouse_table'"
+        "   AND id NOT IN (SELECT dst FROM edges WHERE rel IN "
+        + _sql_list(TIER1_RELS + TIER2_RELS) + ")"
+        "   AND id NOT IN (SELECT src FROM edges WHERE rel <> 'contains')")
+    con.execute(
+        "UPDATE nodes SET tier = 2 WHERE kind = 'lakehouse_table' AND tier = 1"
+        "   AND id NOT IN (SELECT dst FROM edges WHERE rel IN "
+        + _sql_list(TIER1_RELS) + ")")
+
+    # A semantic model Fabric auto-created beside a lakehouse and nobody ever built on:
+    # no measure, no table. It defines nothing, so it can answer nothing.
+    con.execute(
+        "UPDATE nodes SET tier = 3 WHERE kind = 'semantic_model'"
+        "   AND id NOT IN (SELECT parent_id FROM nodes"
+        "                   WHERE parent_id IS NOT NULL AND kind = 'model_table')")
+
+    # A SQL endpoint is the plumbing under a lakehouse, never a thing anyone asks about.
+    con.execute("UPDATE nodes SET tier = 3 WHERE kind = 'sql_endpoint'")
+
+    # A column is only ever as interesting as the table under it. Last, so it picks up
+    # every demotion above.
+    con.execute(
+        "UPDATE nodes SET tier = 3 WHERE kind = 'column'"
+        "   AND parent_id IN (SELECT id FROM nodes WHERE tier = 3)")
 
 
 def _meta(con) -> None:
@@ -309,6 +356,10 @@ def _meta(con) -> None:
         "activity_window_days": str(VIEW_WINDOW_DAYS),
         "workspaces": json.dumps(workspaces),
         "n_nodes": str(n_nodes), "n_edges": str(n_edges), "n_terms": str(n_terms),
+        # How much of the graph is the long tail, so a reader can say what it is not
+        # being shown without counting it themselves. See _tier.
+        "tiers": json.dumps({str(t): n for t, n in con.execute(
+            "SELECT tier, count(*) FROM nodes GROUP BY 1 ORDER BY 1").fetchall()}),
         "weights": json.dumps({"authority": W_AUTHORITY, "popularity": W_POPULARITY,
                                "relevance": W_RELEVANCE, "freshness": W_FRESHNESS}),
     }

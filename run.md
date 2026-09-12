@@ -186,7 +186,7 @@ back to its lakehouse table, and reading Delta tables on OneLake without Fabric 
 ## The graph
 
 Two tables. `nodes(id, kind, name, workspace, item_id, parent_id, description, endorsement,
-owner, modified_at, attrs)` and `edges(src, dst, rel, weight, attrs)`.
+owner, modified_at, attrs, tier)` and `edges(src, dst, rel, weight, attrs)`.
 
 Node kinds: `workspace, semantic_model, model_table, column, measure, report, page, visual,
 report_measure, dashboard, lakehouse, warehouse, lakehouse_table, notebook, pipeline,
@@ -202,6 +202,35 @@ A reference that cannot be bound to a harvested item still gets an edge, pointed
 
 Derived on top: `terms`, `definitions`, `aliases`, `item_usage` (with `item_views` kept as
 a view), `query_usage`, `query_stats`, `meta`, and the views `flow` and `measure_usage`.
+
+### The tier
+
+`nodes.tier` says how close a node sits to something anyone agreed on. It is derived by
+`graph._tier`, not parsed, and everything starts at 1 and is demoted from there:
+
+| tier | means | who is in it |
+|---|---|---|
+| 1 | load-bearing | a term, a measure, a model, a report, a notebook, a table a semantic model sources from |
+| 2 | reachable | a table a notebook or pipeline reads or writes, but no model is built on |
+| 3 | inventory | harvested, and nothing in the harvested workspaces refers to it |
+
+Tier 3 is most of a real tenant: on the three workspaces here it is 685 of 750 lakehouse
+tables, the 18 empty semantic models Fabric auto-creates beside a lakehouse, and every SQL
+endpoint. The harvest still collects all of it - a lakehouse table list is one call per
+store, and `ask sql` answers from tables no model covers - but the renderers hold it back:
+
+- **the wiki** gives it no page of its own. It is named on its store's page under
+  *Not referenced*, and on its workspace page. This is what takes the wiki from 931 item
+  pages to 228.
+- **`graph.html`** counts it and hides it behind the *Unreferenced* toggle.
+- **`ask scope`** leaves empty models out of the model list, says how many it left out,
+  and reports `n_used` beside `n_tables` for each store.
+- **`ask search`** still finds it. The tier breaks ties; it never moves the score, so the
+  thresholds a caller checks mean what they did before.
+
+Nothing is dropped, and `ask table`, `ask sql` and `ask lineage` treat every tier alike.
+A publish from before `schema_version` 4 has no `tier` column; the query side detects that
+and reads everything as tier 1, which is what it meant before the column existed.
 
 ## Status
 
