@@ -1,0 +1,35 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # requirements-dev pins duckdb and deltalake to the versions the Fabric Python 3.12
+      # runtime ships. Resolving newer ones here would make a green run say nothing about
+      # the environment this package actually targets.
+      - name: Install
+        run: pip install -e . -r requirements-dev.txt
+
+      # The suite has its own guards against importing duckrun, but those only prove
+      # something in a place duckrun could have been imported from. It is not installed
+      # here, and must stay that way.
+      - name: duckrun must not be installed
+        run: |
+          if python -c "import duckrun" 2>/dev/null; then
+            echo "::error::duckrun is installed in the test environment"; exit 1
+          fi
+
+      - name: Test
+        run: pytest -q
