@@ -155,3 +155,24 @@ def test_files_pull_restores_the_tree(tmp_path):
 
     quiet = files.push(store, str(back), ["raw"], log=lambda _m: None)
     assert quiet["raw"]["sent"] == 0 and quiet["raw"]["skipped"] == 2
+
+
+def test_the_whole_second_half_runs(tmp_path):
+    """`build_and_publish` is what `harvest` calls once the tenant has been read, and it is
+    the half that can run with no tenant at all - so it is exercised whole, not in pieces."""
+    from fabcontext import build_and_publish
+    from fabcontext._fabric import LocalStore
+    from tests import fixtures
+
+    work = tmp_path / "work"
+    (work / "raw").mkdir(parents=True)
+    fixtures.make_raw(str(work / "raw"))
+    store = LocalStore(str(tmp_path / "lakehouse"))
+
+    out = build_and_publish(str(work), store, profile=False, wiki=True,
+                            log=lambda *_a, **_k: None)
+    assert [status for _n, _t, status in out["steps"]] == ["ok"] * 5
+    assert len(out["tables"]) == 13 and out["tables"]["nodes"] > 30
+    assert len(store.list("raw")) > 20            # the next run's incremental starting point
+    assert len(store.list("wiki")) > 10
+    assert os.path.isfile(os.path.join(store.root, "graph.html"))
