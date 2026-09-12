@@ -12,7 +12,7 @@ import shutil
 from collections import defaultdict
 from typing import Dict, List, Optional, Tuple
 
-from common import page_slug, term_label, write_text
+from .common import page_slug, term_label, write_text
 
 # Kinds that get their own page, and the folder each lands in.
 PAGE_FOLDER = {
@@ -295,7 +295,7 @@ def _term_page(w: Wiki, con, term_id: str, label: str, n_defs: int, n_distinct: 
 
 def _upstream_of(w: Wiki, con, def_ids: List[str], max_depth: int = 6):
     """The physical tables, notebooks and pipelines behind a term's definitions."""
-    from graph import lineage
+    from .graph import lineage
     seen: Dict[str, str] = {}
     for def_id in def_ids[:5]:
         for nid, kind, _name, _ws, _depth, _rel in lineage(con, def_id, "up", max_depth):

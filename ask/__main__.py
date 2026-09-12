@@ -1,7 +1,7 @@
 """python -m ask [--json] [--db PATH] <subcommand> ...
 
 The harvest side publishes the context into a Fabric lakehouse of its own and records the
-address in context.json; this reads it from there with duckrun, pulls the tables into
+address the harvest returned; pass it with --db. This pulls the tables into
 memory and answers from them. Numbers come from DAX on the model, never from here.
 --db overrides the address. --json is global and goes BEFORE the subcommand.
 

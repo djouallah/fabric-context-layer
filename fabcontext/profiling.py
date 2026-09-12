@@ -20,17 +20,15 @@ import json
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
-import duckdb
-
-import fabric_api as api
-from common import read_json, write_json
-
-RAW = ""          # the working raw/ folder; run.py sets it from common.workdir()
+from . import api
+from ._fabric import delta
+from .common import read_json, write_json
 
 REFERENCED = ("sources_from", "reads", "feeds")
 VALUE_CAP = 50            # distinct values kept per column
 VALUE_SCAN_MAX_ROWS = 500_000_000  # above this a value scan is skipped, the log stats stay
 VALUE_LEN = 100           # characters kept per value
+VALUE_GATE = 2.0          # how far over the cap an estimate is trusted without listing
 STRING_TYPES = ("string", "utf8", "varchar", "large_string", "char", "text")
 
 
@@ -97,32 +95,21 @@ def _table_urls(ws_id: str, lh_id: str, schema: str, table: str) -> List[str]:
 
 
 def open_logs(urls: List[str], so: Dict[str, str]) -> List[Optional[Any]]:
-    """One DeltaTable (or None) per url, opened concurrently - the log replay is the slow
-    part of profiling and it is all network latency."""
-    from dbt.adapters.duckrun.engine import open_delta_tables
-    return open_delta_tables([(u, so) for u in urls])
-
-
-def _arrow_fields(table: Any):
-    """The table's columns as Arrow fields, whichever spelling this deltalake has."""
-    schema = table.schema()
-    for name in ("to_arrow", "to_pyarrow"):
-        if hasattr(schema, name):
-            return list(getattr(schema, name)())
-    return [f for f in schema.fields]                  # delta-rs fields: .name and .type
+    """One DeltaTable (or None) per url, opened concurrently - the log replay is the slow part
+    of profiling and it is all network latency. Positional, so the caller can retry the other
+    URL shape for the ones that came back None."""
+    return delta.open_tables([(u, so) for u in urls])
 
 
 def log_profile(table: Any, url: str) -> Optional[Dict]:
     """Columns, row count and per-column min/max/null share from an opened Delta log."""
     if table is None:
         return None
-    import pyarrow as pa
+    import duckdb
 
-    columns = [{"name": f.name, "type": str(f.type)} for f in _arrow_fields(table)]
-    adds = table.get_add_actions(flatten=True)
-    frame = pa.Table.from_batches([adds]) if isinstance(adds, pa.RecordBatch) else adds
+    columns = [{"name": f.name, "type": str(f.type)} for f in delta.arrow_fields(table)]
     cur = duckdb.connect()
-    cur.register("add_actions", frame)
+    cur.register("add_actions", delta.add_actions(table))
     have = {c[0] for c in cur.execute("SELECT * FROM add_actions LIMIT 0").description}
     n_files, n_rows = cur.execute(
         "SELECT count(*), coalesce(sum(num_records), 0)::BIGINT FROM add_actions").fetchone()
@@ -152,74 +139,48 @@ def log_profile(table: Any, url: str) -> Optional[Dict]:
 
 # ---------------------------------------------------------------- values
 
-class _Store:
-    """One duckrun session per lakehouse, opened lazily; the scan side of profiling.
+def scan_values(table, columns: List[Dict]) -> Tuple[Dict, Dict]:
+    """({column: n_distinct}, {column: [values]}) for the string columns of one table.
 
-    Distinct values are what lets an agent write a filter literal without guessing, and they
-    are the only part of profiling that reads data. Two queries per table keep it cheap:
+    Distinct values are what let an agent write a filter literal without guessing, and they
+    are the only part of profiling that reads data rather than the log. Two queries keep it
+    cheap:
 
-    1. `approx_count_distinct` over every string column at once. HyperLogLog, one pass, no
-       sort - on a table of tens of millions of rows an exact COUNT(DISTINCT) per column is
-       the whole cost, and the number is only ever used as a gate.
+    1. `approx_distinct` over every string column at once. HyperLogLog, one pass, no sort -
+       on a table of tens of millions of rows an exact count per column is the whole cost,
+       and the number is only ever used as a gate.
     2. For the columns whose estimate is near or under the cap, `SELECT DISTINCT ... LIMIT
-       cap + 1`. That listing IS the exact answer: cap + 1 rows back means "more than cap
-       distinct" and the column is dropped; fewer means the row count is the exact
+       cap + 1`. That listing is itself the exact answer: cap + 1 rows back means "more than
+       cap distinct" and the column is dropped; fewer means the row count is the exact
        n_distinct.
 
-    So a column that comes back with `values` has an exact `n_distinct`; a column with no
-    `values` has the HyperLogLog estimate. That is the only rule a reader needs.
+    So a column that comes back with `values` has an exact `n_distinct`; one without has the
+    estimate. That is the only rule a reader needs.
+
+    The dialect is DataFusion's, not DuckDB's - hence `approx_distinct`.
     """
+    strings = [c["name"] for c in columns
+               if any(s in str(c.get("type", "")).lower() for s in STRING_TYPES)]
+    if not strings:
+        return {}, {}
+    row = delta.query_rows(table, "SELECT " + ", ".join(
+        "approx_distinct(" + _q(c) + ")" for c in strings) + " FROM t")[0]
+    ndv = {c: int(n or 0) for c, n in zip(strings, row)}
 
-    # An estimate this far above the cap is trusted to mean "far too many". Nearer than
-    # that and the exact listing decides, because HyperLogLog is only approximately right.
-    GATE = 2.0
-
-    def __init__(self, workspace_id: str, lakehouse_id: str, name: str):
-        self.path = workspace_id + "/" + lakehouse_id
-        self.name = name
-        self._session = None
-
-    def _con(self):
-        if self._session is None:
-            import logging
-
-            import duckrun
-
-            logging.getLogger("duckrun").setLevel(logging.WARNING)
-            self._session = duckrun.connect(self.path, read_only=True)
-        return self._session.con
-
-    def close(self) -> None:
-        try:
-            if self._session is not None:
-                self._session.close()
-        except Exception:                              # noqa: BLE001 - nothing to do about it
-            pass
-
-    def values(self, schema: str, table: str, columns: List[Dict]) -> Tuple[Dict, Dict]:
-        """({column: n_distinct}, {column: [values]}) for the string columns."""
-        strings = [c["name"] for c in columns
-                   if any(t in str(c.get("type", "")).lower() for t in STRING_TYPES)]
-        if not strings:
-            return {}, {}
-        ref = _q(schema) + "." + _q(table)
-        con = self._con()
-        row = con.execute("SELECT " + ", ".join(
-            "approx_count_distinct(" + _q(c) + ")" for c in strings) + " FROM " + ref).fetchone()
-        ndv = {c: int(n or 0) for c, n in zip(strings, row)}
-
-        values: Dict[str, List] = {}
-        for col, n in list(ndv.items()):
-            if n == 0 or n > VALUE_CAP * self.GATE:
-                continue                               # estimate stands, no listing
-            out = con.execute("SELECT DISTINCT " + _q(col) + " FROM " + ref
-                              + " WHERE " + _q(col) + " IS NOT NULL ORDER BY 1 LIMIT "
-                              + str(VALUE_CAP + 1)).fetchall()
-            if len(out) > VALUE_CAP:                   # over the cap, and now known exactly
-                continue
-            ndv[col] = len(out)                        # the listing is the exact count
-            values[col] = [str(r[0])[:VALUE_LEN] for r in out]
-        return ndv, values
+    values: Dict[str, List] = {}
+    for col, n in list(ndv.items()):
+        # An estimate this far above the cap is trusted to mean "far too many"; nearer than
+        # that and the exact listing decides, because HyperLogLog is only approximately right.
+        if n == 0 or n > VALUE_CAP * VALUE_GATE:
+            continue
+        out = delta.query_rows(table, "SELECT DISTINCT " + _q(col) + " FROM t WHERE "
+                               + _q(col) + " IS NOT NULL ORDER BY 1 LIMIT "
+                               + str(VALUE_CAP + 1))
+        if len(out) > VALUE_CAP:                   # over the cap, and now known exactly
+            continue
+        ndv[col] = len(out)                        # the listing is the exact count
+        values[col] = [str(r[0])[:VALUE_LEN] for r in out]
+    return ndv, values
 
 
 def _q(name: str) -> str:
@@ -229,20 +190,20 @@ def _q(name: str) -> str:
 
 # ---------------------------------------------------------------- driver
 
-def _raw_folders() -> Dict[str, str]:
+def _raw_folders(raw: str) -> Dict[str, str]:
     """{workspace id: raw folder}; external stores land under raw/external."""
     out: Dict[str, str] = {}
-    if not os.path.isdir(RAW):
+    if not os.path.isdir(raw):
         return out
-    for name in os.listdir(RAW):
-        ws = read_json(os.path.join(RAW, name, "workspace.json"), None)
+    for name in os.listdir(raw):
+        ws = read_json(os.path.join(raw, name, "workspace.json"), None)
         if ws and ws.get("id"):
-            out[ws["id"]] = os.path.join(RAW, name)
+            out[ws["id"]] = os.path.join(raw, name)
     return out
 
 
-def run(con, stores: List[str] = (), all_tables: bool = False, values: bool = True,
-        dry_run: bool = False) -> Dict[str, int]:
+def run(con, raw: str, stores: List[str] = (), all_tables: bool = False,
+        values: bool = True, dry_run: bool = False) -> Dict[str, int]:
     """`con` is a connection over the built context - the in-memory one `graph.build`
     returned, or the one `graph.open_published` pulled back out of the lakehouse. This step
     only reads it, to choose which tables are worth profiling."""
@@ -259,17 +220,16 @@ def run(con, stores: List[str] = (), all_tables: bool = False, values: bool = Tr
         return {"selected": 0}
 
     so = {"bearer_token": api.onelake_token()}
-    folders = _raw_folders()
+    folders = _raw_folders(raw)
     by_store: Dict[Tuple[str, str], List[Dict]] = {}
     for t in targets:
         by_store.setdefault((t["workspace_id"], t["lakehouse_id"]), []).append(t)
 
     done = failed = scanned = 0
     for (ws_id, lh_id), tables in by_store.items():
-        folder = folders.get(ws_id) or os.path.join(RAW, "external")
+        folder = folders.get(ws_id) or os.path.join(raw, "external")
         path = os.path.join(folder, "profiles", lh_id + ".json")
         profile = read_json(path, {}) or {}
-        session = _Store(ws_id, lh_id, tables[0]["lakehouse"])
         _log("  " + tables[0]["lakehouse"] + " (" + str(len(tables)) + " tables)")
         # open every table's log at once, then retry the schema-less path for the misses
         urls = [_table_urls(ws_id, lh_id, t["schema"], t["table"]) for t in tables]
@@ -297,19 +257,19 @@ def run(con, stores: List[str] = (), all_tables: bool = False, values: bool = Tr
                      + " rows, value scan skipped (cap " + format(VALUE_SCAN_MAX_ROWS, ",") + ")")
             elif values and t["model_bound"]:
                 try:
-                    ndv, vals = session.values(t["schema"], t["table"], entry["columns"])
+                    ndv, vals = scan_values(table_obj, entry["columns"])
                     entry["n_distinct"], entry["values"] = ndv, vals
                     scanned += 1
                 except Exception as exc:               # noqa: BLE001 - stats still useful
                     _log("    [warn] values for " + key + ": " + str(exc)[:120])
-            entry["profiled_at"] = dt.datetime.utcnow().replace(microsecond=0).isoformat()
+            entry["profiled_at"] = dt.datetime.now(dt.timezone.utc).replace(
+                microsecond=0, tzinfo=None).isoformat()
             profile[key] = entry
             done += 1
             _log("    " + key + ": " + str(len(entry["columns"])) + " columns, "
                  + format(entry["n_rows"], ",") + " rows"
                  + (", values for " + str(len(entry.get("values") or {})) + " columns"
                     if entry.get("values") else ""))
-        session.close()
         write_json(path, profile)
         _log("  wrote " + path)
     _log("profile: " + str(done) + " profiled, " + str(scanned) + " value-scanned, "

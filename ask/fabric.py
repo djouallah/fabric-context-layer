@@ -2,7 +2,7 @@
 
 Two things, both read-only and both DAX: run a query on a semantic model, and list the
 values of a column when the harvest carries no profile for it. Tokens and HTTP come from
-duckrun, the same library the harvest uses, but nothing here touches src/ or the raw/
+fabcontext's Fabric layer, the same one the harvest uses, but nothing here touches the raw/
 folder. Numbers about the data only ever come from here.
 """
 from __future__ import annotations
@@ -64,14 +64,14 @@ def dax(workspace_id: str, dataset_id: str, query: str, max_rows: int = MAX_ROWS
     if not dax_is_query(query):
         raise Refused("only EVALUATE / DEFINE queries run here; got: "
                       + (query or "").strip()[:60])
-    from duckrun.auth import get_powerbi_token
-    from duckrun.fabric_remote import _http_request
+    from fabcontext._fabric import auth
+    from fabcontext._fabric.rest import request as _http_request
 
     max_rows = max(1, min(int(max_rows or MAX_ROWS_DEFAULT), MAX_ROWS_HARD))
     url = PBI_API + "/groups/" + workspace_id + "/datasets/" + dataset_id + "/executeQueries"
     body = {"queries": [{"query": query}], "serializerSettings": {"includeNulls": True}}
     started = time.time()
-    resp = _http_request("POST", url, token=get_powerbi_token(), json_body=body,
+    resp = _http_request("POST", url, token=auth.powerbi_token(), json_body=body,
                          timeout=timeout)
     elapsed = int((time.time() - started) * 1000)
     if resp.status_code >= 400:
@@ -132,13 +132,13 @@ def sql_endpoint(workspace_id: str, item_id: str, kind: str = "lakehouse") -> st
     key = str(workspace_id) + "/" + str(item_id)
     if key in _ENDPOINTS:
         return _ENDPOINTS[key]
-    from duckrun.auth import get_fabric_token
-    from duckrun.fabric_remote import _http_request
+    from fabcontext._fabric import auth
+    from fabcontext._fabric.rest import request as _http_request
 
     coll = "warehouses" if kind == "warehouse" else "lakehouses"
     url = ("https://api.fabric.microsoft.com/v1/workspaces/" + str(workspace_id) + "/"
            + coll + "/" + str(item_id))
-    resp = _http_request("GET", url, token=get_fabric_token())
+    resp = _http_request("GET", url, token=auth.fabric_token())
     if resp.status_code >= 400:
         raise NoSqlEndpoint("HTTP " + str(resp.status_code) + " reading " + coll[:-1]
                             + " " + str(item_id) + ": " + (resp.text or "")[:200])
@@ -158,21 +158,17 @@ def sql_endpoint(workspace_id: str, item_id: str, kind: str = "lakehouse") -> st
 
 
 def sql_token() -> str:
-    """An Entra token for the SQL endpoint - a fourth audience, so duckrun's three named
-    entry points do not cover it."""
+    """An Entra token for the SQL endpoint - a fifth audience, distinct from the four the
+    harvest uses."""
     if _SQL_TOKEN:
         return _SQL_TOKEN[0]
+    from fabcontext._fabric import auth
+
     try:
-        import notebookutils                           # noqa: F401 - Fabric runtime only
-        token = notebookutils.credentials.getToken(SQL_SCOPE)
-    except Exception:                                  # noqa: BLE001 - not in a notebook
-        from duckrun.auth import _azure_identity_token
-        token = _azure_identity_token(SQL_SCOPE)
-    if not token:
-        raise NoSqlEndpoint("no token for the SQL endpoint; run "
-                            "`az login --scope " + SQL_SCOPE + "`")
-    _SQL_TOKEN.append(token)
-    return token
+        _SQL_TOKEN.append(auth.sql_token())
+    except RuntimeError as exc:
+        raise NoSqlEndpoint(str(exc))
+    return _SQL_TOKEN[0]
 
 
 def attach_store(con, alias: str, database: str, host: str) -> str:

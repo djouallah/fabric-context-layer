@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fabcontext"
+version = "0.1.0"
+description = "Harvest a Microsoft Fabric tenant into a ranked context layer, published as Delta tables in a lakehouse."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "mim" }]
+# The Fabric Python notebook runtime's default kernel. It also offers 3.10 and 3.11; the code
+# is written against 3.12 because that is what a new notebook gets.
+requires-python = ">=3.12"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Developers",
+    "Topic :: Database",
+]
+
+# Every floor is at or below the version the Fabric Python 3.12 runtime already ships
+# (docs/fabric-runtime.txt), and nothing is capped above. That is the point of the list, not
+# an accident of it: pip satisfies an already-met requirement by doing nothing, so inside a
+# notebook `%pip install fabcontext` fetches one pure-Python wheel, replaces neither native
+# library, and needs no `restartPython()`. Raising a floor past the runtime's version would
+# cost a user that restart, so don't - probe for the newer API instead.
+#
+#   duckdb 1.4.4  deltalake 1.2.1  requests 2.32.5
+#   azure-identity 1.25.3  azure-storage-file-datalake 12.14.0
+#
+# Deliberately absent: pyarrow (the write path streams a DuckDB relation straight to
+# delta-rs, and arro3 ships inside the deltalake wheel for the one batch that needs
+# wrapping) and pyyaml (aliases.yaml is an optional convenience, read only if importable).
+dependencies = [
+    "duckdb>=1.4",
+    "deltalake>=1.2",
+    "requests>=2",
+    "azure-identity>=1.25",
+    "azure-storage-file-datalake>=12.14",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[project.urls]
+Homepage = "https://github.com/djouallah/fabric-context-layer"
+Repository = "https://github.com/djouallah/fabric-context-layer"
+Issues = "https://github.com/djouallah/fabric-context-layer/issues"
+
+[tool.setuptools.packages.find]
+include = ["fabcontext*"]
+
+[tool.setuptools.package-data]
+fabcontext = ["*.sql", "*.html", "*.yaml"]

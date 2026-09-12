@@ -1,4 +1,4 @@
-"""Read-only access to the published context, through duckrun.
+"""Read-only access to the published context.
 
 The harvest side publishes the context into a Fabric lakehouse of its own and records the
 address in context.json. This module opens it (or whatever `--db` names: a folder of Delta
@@ -130,7 +130,7 @@ class Ambiguous(Exception):
 def open_db(path: Optional[str] = None, refresh: bool = False, cache: bool = True):
     """A DuckDB connection over the published context, held locally.
 
-    `path` is a duckrun target - the `<workspace-guid>/<lakehouse-guid>` the harvest side
+    `path` is what the harvest returned - the Tables root of the lakehouse it
     recorded, `ws/name.Lakehouse`, an abfss:// URL, or a local folder of Delta tables.
     Omit it to read context.json. A .duckdb file still opens directly.
 
@@ -178,8 +178,7 @@ def open_db(path: Optional[str] = None, refresh: bool = False, cache: bool = Tru
 
 
 def is_remote(path: str) -> bool:
-    """The shapes duckrun expands to a OneLake URL, plus an explicit one. duckrun reads a
-    bare `a/b` as a local relative path, so that is not one of them."""
+    """Whether `path` names a remote store rather than a local folder of Delta tables."""
     low = path.lower()
     if low.startswith(("abfss://", "az://", "s3://", "gs://")):
         return True
@@ -219,36 +218,14 @@ def _save(con, local: str) -> None:
 
 def _pull(path: str):
     """Copy the published tables out of the Delta store into a fresh in-memory DuckDB."""
-    import contextlib
-    import logging
-    import sys
+    from fabcontext._fabric import auth, delta, onelake
 
-    import duckrun
-
-    # duckrun announces the catalog it opened on stdout and through dbt's logger; --json
-    # output has to stay parseable, so both go to stderr while the session opens.
-    previous = logging.root.manager.disable
-    logging.disable(logging.INFO)
-    try:
-        with contextlib.redirect_stdout(sys.stderr):
-            session = duckrun.connect(path, read_only=True)
-    finally:
-        logging.disable(previous)
+    options = (onelake.storage_options(auth.onelake_token())
+               if path.startswith("abfss://") else None)
     con = duckdb.connect()
-    try:
-        for table in PUBLISHED:
-            try:
-                frame = session.con.execute("SELECT * FROM " + table).arrow()
-            except Exception:                    # noqa: BLE001 - an optional table is absent
-                continue
-            con.register("pull_" + table, frame)
-            con.execute("CREATE TABLE " + table + " AS SELECT * FROM pull_" + table)
-            con.unregister("pull_" + table)
-    finally:
-        try:
-            session.close()
-        except Exception:                        # noqa: BLE001 - nothing to do about it
-            pass
+    for table in PUBLISHED:
+        # An optional table simply does not arrive; every reader already degrades on that.
+        delta.read_into(con, table, delta.table_url(path, "dbo", table), options)
     if not _tables(con):
         raise NotFound("no published tables at " + path)
     return con

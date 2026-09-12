@@ -1,19 +1,19 @@
-"""Fabric / Power BI REST calls, wrapped thin over duckrun.
+"""The Fabric and Power BI REST calls the harvest makes, and nothing else.
 
-duckrun already solves the three hard parts - token acquisition for three different
-audiences, 429/5xx retry with Retry-After, and the 202 long-running-operation dance that
-getDefinition uses - so nothing here re-implements them.
+One call per thing the harvest wants to know. The three awkward parts - a token per
+audience, retrying through throttling, and the 202 long-running-operation dance that
+getDefinition uses - all live in `_fabric`, so this file reads as a list of endpoints.
 """
 from __future__ import annotations
 
 import time
 from typing import Any, Dict, List, Optional
 
-from duckrun.auth import get_fabric_token, get_onelake_token, get_powerbi_token
-from duckrun.fabric_remote import _get_definition, _http_request, _paged_values
-
-FABRIC_API = "https://api.fabric.microsoft.com/v1"
-PBI_API = "https://api.powerbi.com/v1.0/myorg"
+from ._fabric import auth
+from ._fabric.rest import FABRIC_API, POWERBI_API as PBI_API
+from ._fabric.rest import get_definition as _get_definition
+from ._fabric.rest import paged as _paged
+from ._fabric.rest import request as _http_request
 
 # getDefinition is a long-running operation; a workspace with hundreds of items would
 # otherwise walk straight into the throttle.
@@ -44,45 +44,22 @@ ITEM_FORMATS = {
 
 
 def fabric_token() -> str:
-    return get_fabric_token()
+    return auth.fabric_token()
 
 
 def pbi_token() -> str:
-    return get_powerbi_token()
+    return auth.powerbi_token()
 
 
 def onelake_token() -> str:
-    return get_onelake_token()
-
-
-def _paged(url: str, token: str, list_key: str, params: Optional[dict] = None) -> List[Dict]:
-    """Every row across all pages of an endpoint whose body is {<list_key>: [...]}.
-
-    duckrun's _paged_values only understands bodies keyed 'value'; the admin, scanner and
-    lakehouse-tables endpoints each use a different key, so this is the general form.
-    """
-    out: List[Dict] = []
-    while True:
-        resp = _http_request("GET", url, token=token, params=params)
-        resp.raise_for_status()
-        body = resp.json()
-        out.extend(body.get(list_key) or [])
-        next_uri = body.get("continuationUri")
-        next_tok = body.get("continuationToken")
-        if next_uri and body.get("lastResultSet") is not True:
-            url, params = next_uri, None
-        elif next_tok:
-            params = dict(params or {})
-            params["continuationToken"] = next_tok
-        else:
-            return out
+    return auth.onelake_token()
 
 
 # ---------------------------------------------------------------- inventory
 
 def workspace_items(ws_id: str, token: str) -> List[Dict]:
     """Every item in the workspace, each tagged with its type."""
-    return _paged_values(FABRIC_API + "/workspaces/" + ws_id + "/items", token=token)
+    return _paged(FABRIC_API + "/workspaces/" + ws_id + "/items", token)
 
 
 def workspace_info(ws_id: str, token: str) -> Dict:
@@ -158,23 +135,9 @@ def onelake_tables(ws_id: str, item_id: str, token: str) -> List[Dict]:
     Returns [{schema, name}]. A schema-enabled store has one directory level of schemas
     above the tables; an unschematised one has the tables directly.
     """
-    from dbt.adapters.duckrun.remote import list_delta_tables
+    from ._fabric.onelake import OneLakeStore
 
-    root = ("abfss://" + ws_id + "@onelake.dfs.fabric.microsoft.com/" + item_id + "/Tables")
-    so = {"bearer_token": token}
-    top = list_delta_tables(root, "", so)
-    out: List[Dict] = []
-    for name in top:
-        children = []
-        try:
-            children = list_delta_tables(root, name, so)
-        except Exception:                            # noqa: BLE001 - a table, not a schema
-            children = []
-        if children:
-            out.extend({"schema": name, "name": child} for child in children)
-        else:
-            out.append({"schema": "dbo", "name": name})
-    return out
+    return OneLakeStore(ws_id, item_id, token=token).list_table_dirs()
 
 
 # ---------------------------------------------------------------- scanner
@@ -244,26 +207,15 @@ MONITORING_DB_HINTS = ("monitoring", "workspacemonitoring")
 def kusto_token(cluster_uri: str) -> str:
     """A bearer token for an Eventhouse's query endpoint.
 
-    The audience is the cluster itself, which is neither of duckrun's three - inside a
-    Fabric notebook notebookutils mints it directly, and locally azure-identity does.
+    The audience is the cluster itself, so this is a fourth one - not interchangeable with
+    the storage, Fabric or Power BI tokens.
     """
-    try:
-        import notebookutils                          # noqa: F401 - Fabric runtime only
-        return notebookutils.credentials.getToken(cluster_uri)
-    except Exception:                                 # noqa: BLE001 - not in a notebook
-        pass
-    from duckrun.auth import _azure_identity_token
-    token = _azure_identity_token(cluster_uri.rstrip("/") + "/.default")
-    if not token:
-        raise RuntimeError(
-            "no token for " + cluster_uri + "; run `az login --scope "
-            + cluster_uri.rstrip("/") + "/.default`")
-    return token
+    return auth.kusto_token(cluster_uri)
 
 
 def _items_of_type(ws_id: str, item_type: str, token: str) -> List[Dict]:
-    return _paged_values(FABRIC_API + "/workspaces/" + ws_id + "/items", token=token,
-                         params={"type": item_type})
+    return _paged(FABRIC_API + "/workspaces/" + ws_id + "/items", token,
+                  params={"type": item_type})
 
 
 def monitoring_database(ws_id: str, token: str) -> Optional[Dict]:
@@ -275,7 +227,7 @@ def monitoring_database(ws_id: str, token: str) -> Optional[Dict]:
     """
     for coll in ("kqlDatabases", "eventhouses"):
         try:
-            rows = _paged_values(FABRIC_API + "/workspaces/" + ws_id + "/" + coll, token=token)
+            rows = _paged(FABRIC_API + "/workspaces/" + ws_id + "/" + coll, token)
         except Exception:                             # noqa: BLE001 - collection may be refused
             continue
         for row in rows:

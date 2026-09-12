@@ -5,8 +5,8 @@ description: Answer questions about the harvested Microsoft Fabric tenant - busi
 
 # Answering from the Fabric context layer
 
-The harvest side (`src/`) has already read the tenant and published the context into a
-Fabric lakehouse of its own; `context.json` says which. You answer from that through
+The harvest side (`fabcontext`) has already read the tenant and published the context
+into a Fabric lakehouse of its own; `--db` says which. You answer from that through
 `python -m ask`, which reads it with duckrun, and run DAX against a semantic model when a
 question needs a number. Everything you cite comes from the tool output, never from memory.
 
@@ -116,7 +116,7 @@ so and stop - do not run the harvest side yourself.
 ## Never
 
 - Never re-derive in SQL a number a measure already defines. A measure exists -> DAX.
-- Never run `python src/run.py ...` (the harvest side), never write files, and never read
+- Never run the harvest side (`python -m fabcontext ...`), never write files, never read
   the harvested JSON directly - it is in the lakehouse's `Files/raw` and in the working
   folder, and reading it is exactly what the context layer exists to replace.
 - Never answer a number without having run it.

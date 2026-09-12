@@ -10,7 +10,7 @@ import json
 import os
 from typing import Dict, List
 
-from common import HERE
+from .common import HERE
 
 TEMPLATE = os.path.join(HERE, "graph_template.html")
 

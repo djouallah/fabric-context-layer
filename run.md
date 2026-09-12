@@ -2,14 +2,13 @@
 
 The operational side. The [README](README.md) has the idea.
 
-Work happens in a folder outside the repo, one per context, under
-`%LOCALAPPDATA%\fabric-context` (`FABRIC_CONTEXT_CACHE` moves it). `context.json` at the
-repo root records which lakehouse the context went into; it is an address, not content,
-and both sides read it.
+The harvest is a pip package, `fabcontext`. It runs inside a Fabric notebook, reads the
+tenant, and leaves a lakehouse behind. The URL it returns is the only thing that crosses the
+boundary: no config file, no shared state, nothing kept on the machine that ran it.
 
 The context is not another item. There is one per tenant, ranked per domain, built by the
 platform and hidden; an agent never needs its address. This POC keeps it in a lakehouse
-because that is the durable store it can write to, and `context.json` stands in for
+because that is the durable store it can write to, and the returned URL stands in for
 discovery. The repo holds code, no data: one Python file per harvest step, a two-table
 graph, the ranking in one SQL statement. It is meant to be read.
 
@@ -26,47 +25,69 @@ Two measures on one term with different DAX is a conflict; every definition is s
 | freshness | 0.5 | `exp(-days since the owner changed / 180)` |
 
 Rank 1 is the definition; a number is always rank 1 run by name on its own model, never
-re-derived. Weights are hand-picked, in `src/graph.py`. **Rank is not correctness** - a
+re-derived. Weights are hand-picked, in `fabcontext/graph.py`. **Rank is not correctness** - a
 popular, certified, wrong definition still wins, and every answer to a conflicting term
 says so in one line.
 
 ## Run it
 
-```powershell
-az login --scope https://api.fabric.microsoft.com/.default   # once, if not in a Fabric notebook
+Two lines in a Fabric notebook:
 
-python src/run.py harvest --to "My Workspace/context_layer" --workspace "My Workspace"
-python src/run.py build            # -> Tables/, and Files/build
-python src/run.py profile          # lakehouse columns, stats and values (optional)
-python src/run.py build            # publish again, now with the profiles
-python src/run.py wiki             # -> Files/wiki
-python src/run.py viz              # -> Files/graph.html
-python src/run.py check
-python src/run.py files list       # what is under Files/ now
+```python
+%pip install fabcontext
 ```
 
-`src/run.py all --to "..." --workspace "..."` does every step in order, in one process, so
-the chained steps use the graph it just built instead of downloading it again. `--to` is
-needed once - after that `context.json` remembers it. Re-running `harvest` refetches only
-what changed; `build` is a pure function of the working `raw/`.
+```python
+from fabcontext import harvest
+url = harvest("My Workspace")
+```
 
-`harvest --query-log` additionally reads each workspace's **workspace monitoring**
-Eventhouse for the DAX that actually ran, and attributes it to the measures each query
-called - the one signal that says a measure was *evaluated* rather than merely written
-into a report. It is off by default: monitoring bills against the capacity, and a
-workspace without it is skipped, so partial coverage adds to the popularity signal rather
-than replacing it. Query text stays in `raw/`; only counts are published.
+That is the whole interface. The first call creates a lakehouse called `context_layer` in
+that workspace; every later call updates it. `harvest(["A", "B"], to="Shared/context")`
+harvests several workspaces into a lakehouse of your choosing. It returns the lakehouse's
+Tables root, which is what the query side takes as `--db`.
 
-Every step pushes what it produced up to `Files/`; `--no-push` leaves it local. A push is a
-diff against the last one - only files whose size or mtime changed go up, and files that
-disappeared locally are deleted remotely - because each file is its own round trip, and
-re-sending 900 unchanged wiki pages would take minutes. `python src/run.py files pull`
-brings the whole working set back down on another machine.
+**The install replaces nothing and needs no kernel restart.** `fabcontext` declares five
+dependencies and the Fabric Python 3.12 runtime already has all five at or above the
+required version (`docs/fabric-runtime.txt`), so pip fetches one pure-Python wheel and
+leaves duckdb and deltalake - both native - exactly as they are. That is the reason for the
+version floors in `pyproject.toml`; raising one past the runtime's version would cost every
+user a restart.
 
-`build` creates the lakehouse schema-enabled if it does not exist. The context then lives
-in the tenant it describes: its SQL analytics endpoint answers T-SQL over `dbo.nodes`,
-`dbo.edges`, `dbo.terms`, `dbo.definitions` and the rest, Power BI and notebooks can read
-it, and a Fabric data agent can be pointed at it.
+The knobs, all optional:
+
+| | |
+|---|---|
+| `to="<workspace>/<lakehouse>"` | where to publish. Default: `context_layer` in the first workspace named |
+| `days=28` | days of activity events. The audit log keeps 30 |
+| `query_log=True` | also read the monitoring Eventhouse (below) |
+| `refresh=True` | refetch everything rather than only what changed |
+| `profile=False` | skip lakehouse columns, stats and values |
+| `values=False` | profile from the Delta log only, without the distinct-value scan |
+| `wiki=False` | skip the markdown wiki and `graph.html` |
+| `aliases={"revenue": ["Net Sales"]}` | merges the word lists cannot make |
+| `folder="context"` | workspace folder to put the lakehouse in |
+
+From a terminal, `python -m fabcontext "My Workspace"` takes the same options as flags.
+
+**A re-run is cheap.** The lakehouse keeps the previous harvest under `Files/raw`, and a run
+against an existing one pulls it down first: a definition is refetched only when its
+`lastUpdatedDate` has moved, and the audit log is one file per UTC day with today and
+yesterday refetched. The scanner result and the store table lists carry no freshness signal
+of their own, so they refetch once older than `stale_after_days` (default 1) - without that
+they would freeze on the first run and never move again.
+
+`query_log=True` additionally reads each workspace's **workspace monitoring** Eventhouse for
+the DAX that actually ran, and attributes it to the measures each query called - the one
+signal that says a measure was *evaluated* rather than merely written into a report. It is
+off by default: monitoring bills against the capacity, and a workspace without it is
+skipped, so partial coverage adds to the popularity signal rather than replacing it. Query
+text stays in `raw/`; only counts are published.
+
+The lakehouse is created schema-enabled if it does not exist. The context then lives in the
+tenant it describes: its SQL analytics endpoint answers T-SQL over `dbo.nodes`, `dbo.edges`,
+`dbo.terms`, `dbo.definitions` and the rest, Power BI and notebooks can read it, and a
+Fabric data agent can be pointed at it.
 
 ```sql
 -- on the lakehouse's SQL analytics endpoint
@@ -77,8 +98,11 @@ SELECT name, owner_item_name, rank, expression
 
 ## Ask it
 
+`--db` is the URL `harvest()` returned; it identifies the lakehouse and is the only thing the
+two halves share.
+
 ```powershell
-python -m ask contract                        # what the lakehouse publishes, and what is missing
+python -m ask --db <url> contract             # what the lakehouse publishes, and what is missing
 python -m ask scope
 python -m ask search "average price"
 python -m ask define "average price"          # ranked, with the DAX and the conflict flag
@@ -92,7 +116,7 @@ python -m ask sql "select ... from terms"     # DuckDB SQL over the context tabl
 ```
 
 `--json`, `--db`, `--refresh` and `--no-cache` are global flags and go before the
-subcommand.
+subcommand (the rest of the examples above omit `--db` only for brevity).
 
 `sql` also reads the data itself when the query qualifies a table with a harvested store
 (`select ... from coffee.benchmark_tests.contoso_sales`): the store attaches read-only over
@@ -129,46 +153,36 @@ lineage, usage and data questions for the top terms, plus one out-of-scope quest
 `python -m ask evals run` runs it through Claude Code headless with and without the
 context layer and reports accuracy per class. Nothing in it names a tenant.
 
-## The nightly refresh
+## On a schedule
 
-```powershell
-python src/run.py deploy --daily 03:00 --tz "AUS Eastern Standard Time"
-python src/run.py deploy --run          # redeploy and trigger one run now
-```
+There is no deployer here. Put the two cells in a notebook and schedule that notebook from
+Fabric, which is the tool for it - and then the laptop is out of the loop entirely. Inside a
+notebook the run needs no sign-in: the notebook's own identity supplies every token.
 
-`deploy` ships `src/` to `Files/code`, builds a **pure-Python** Fabric notebook, deploys it
-with `updateDefinition` (so redeploying keeps the item id and its schedule) and PATCHes a
-daily trigger. The notebook stages the code and `Files/raw` onto its own temp disk, runs
-harvest -> build -> publish -> profile -> build -> wiki -> viz, and pushes the delta back.
-It needs no `az login` and no attached lakehouse: duckrun resolves the Fabric notebook's own
-identity, and every path is `abfss://`. `deploy --query-log` reads the monitoring
-Eventhouse nightly too.
-
-It is cheap night after night because the harvest is incremental where it counts: a
-definition refetches only when its `lastUpdatedDate` moves, and the audit log is one file
-per UTC day with only today and yesterday refetched. The scanner result and the store table
-lists have no such signal, so they refetch once they are older than `--stale-after-days`
-(default 1) - without that they would freeze on the first run and never move again.
-
-The schedule runs as its owner, and the Scanner API and activity events need Fabric admin.
-Without that, those two steps fail and the graph loses endorsement, cross-workspace
-lineage and usage - the notebook prints a per-step table and exits non-zero so it is not
-silent. If a run dies between `publish` and the push, `Tables/` is newer than `Files/` until
-the next run; harmless.
+A scheduled run harvests incrementally for the reasons above, and publishes over the same
+lakehouse. If a run dies between the publish and the file push, `Tables/` is newer than
+`Files/` until the next run; harmless.
 
 ## What it needs
 
 | | |
 |---|---|
-| Python | 3.12, with `duckdb`, `duckrun` and `pyyaml` installed |
-| Auth | Fabric admin, for the Scanner API and the audit log. A workspace member gets definitions and inventory but no endorsement, no lineage across workspaces and no usage. `dax` needs Build permission on the model and the tenant setting *Dataset Execute Queries REST API*. |
+| Python | 3.12, the Fabric notebook default. `pip install fabcontext` |
+| Auth | Fabric admin, for the Scanner API and the audit log. A workspace member gets definitions and inventory but no endorsement, no lineage across workspaces and no usage. Creating the lakehouse needs contributor on the target workspace. `ask dax` needs Build permission on the model and the tenant setting *Dataset Execute Queries REST API*. |
 | Tenant settings | *Enhance admin API responses with detailed metadata* and *Enhance admin API responses with DAX and mashup expressions*. Without the second, the scanner returns measures with no expression - the harvest warns you. |
-| Workspace monitoring | only for `--query-log`; enabled per workspace, bills against the capacity |
+| Workspace monitoring | only for `query_log=True`; enabled per workspace, bills against the capacity |
 
-Everything reuses [duckrun](https://github.com/djouallah/duckrun) for the parts that are
-genuinely hard: acquiring tokens for three different audiences, retrying through throttling,
-polling the long-running definition endpoint, reading a Direct Lake partition's binding
-back to its lakehouse table, and reading Delta tables on OneLake without Fabric compute.
+Five dependencies, every one already in the Fabric runtime: `duckdb` and `deltalake` do the
+engine and the Delta I/O, `requests` the REST calls, `azure-identity` the sign-in outside a
+notebook, and `azure-storage-file-datalake` the loose files - OneLake speaks ADLS Gen2, so
+that is the stock SDK pointed at `onelake.dfs.fabric.microsoft.com`.
+
+Two choices worth knowing about, both made to keep that list short. Delta tables are read
+through delta-rs's own DataFusion engine (`QueryBuilder`) rather than DuckDB's `delta_scan`,
+because the `delta` and `azure` DuckDB extensions are not bundled and would be downloaded in
+every notebook session. And a table is published by streaming a DuckDB relation straight
+into `write_deltalake` over an Arrow C stream, so nothing is materialised in between and
+pyarrow is never needed.
 
 ## What is harvested
 
@@ -198,7 +212,7 @@ uses, relates_to, mentions, viewed_by, depends_on`.
 
 A reference that cannot be bound to a harvested item still gets an edge, pointed at an
 `unresolved:` id that deliberately has no node, so the miss is counted rather than dropped.
-`src/run.py check` reports those separately from genuinely dangling edges.
+The tests assert the count is zero for everything else.
 
 Derived on top: `terms`, `definitions`, `aliases`, `item_usage` (with `item_views` kept as
 a view), `query_usage`, `query_stats`, `meta`, and the views `flow` and `measure_usage`.
@@ -206,7 +220,7 @@ a view), `query_usage`, `query_stats`, `meta`, and the views `flow` and `measure
 ### The tier
 
 `nodes.tier` says how close a node sits to something anyone agreed on. It is derived by
-`graph._tier`, not parsed, and everything starts at 1 and is demoted from there:
+`fabcontext/graph.py`'s `_tier`, not parsed, and everything starts at 1 and is demoted from there:
 
 | tier | means | who is in it |
 |---|---|---|
@@ -234,42 +248,53 @@ and reads everything as tier 1, which is what it meant before the column existed
 
 ## Status
 
-`python src/selftest.py` builds a synthetic tenant covering both report formats, a Direct
-Lake model, a DirectQuery model, a model bound to an unharvested store, a notebook, a
-pipeline, a profile file, an audit log and a query log, runs the whole pipeline over it
-and checks the result - including the publish, the read-back and the query side, with a
-temp folder standing in for the lakehouse. It prints how many checks it ran. No Fabric
-access needed; run it after touching any parser.
+`pytest` builds a synthetic tenant covering both report formats, a Direct Lake model, a
+DirectQuery model, a model bound to an unharvested store, a notebook, a pipeline, a profile
+file, an audit log and a query log, runs the whole pipeline over it and checks the result -
+including the publish, the read-back against the published column contract, and the file
+push, with a temp folder standing in for the lakehouse. No Fabric access needed; run it
+after touching any parser.
 
-The harvest has run against three real workspaces. Every REST call in `fabric_api.py` was
-written from the documented contract, and none of them needed correcting. Failures are
+```powershell
+python -m venv .venv
+.venv\Scripts\pip install -e . -r requirements-dev.txt
+.venv\Scripts\pytest
+```
+
+`requirements-dev.txt` pins duckdb and deltalake to the versions Fabric ships. That is not
+tidiness: a laptop otherwise resolves newer ones, and a suite green against those says
+nothing about the runtime this targets. One test asserts that importing `fabcontext` pulls
+in no duckrun, dbt, pyarrow or obstore, and another that every declared dependency appears
+in `docs/fabric-runtime.txt`.
+
+The harvest has run against three real workspaces. Every REST call in `fabcontext/api.py`
+was written from the documented contract, and none of them needed correcting. Failures are
 caught per item and recorded in `raw/<workspace>/manifest.json` rather than stopping the run.
 
-**`parse_report.py` has one real report of coverage.** Reports carry the popularity
-signal; on a report-free workspace definitions are ordered on authority, model usage and
-freshness.
+**`parse_report.py` has one real report of coverage.** Reports carry the popularity signal;
+on a report-free workspace definitions are ordered on authority, model usage and freshness.
 
 ## Files
 
 | | |
 |---|---|
-| `src/common.py` | slugs, node ids, term normalisation, DAX stripping, the node/edge emitter |
-| `src/fabric_api.py` | the REST calls, wrapped thin over duckrun |
-| `src/harvest.py` | Fabric -> `raw/`, the query log included |
-| `src/parse_model.py` | TMSL -> tables, measures, terms, DAX references, source bindings |
-| `src/parse_report.py` | PBIR and PBIR-Legacy -> pages, visuals, field references |
-| `src/parse_code.py` | notebooks and pipelines -> reads, feeds, runs |
-| `src/parse.py` | orchestrates the parsers, the scanner, the audit log, the query log, external stubs, profiles |
-| `src/profiling.py` | Delta logs and duckrun value scans -> `raw/*/profiles/` |
-| `src/publish.py` | the context into a lakehouse, through duckrun, and `context.json` |
-| `src/deploy.py`, `src/notebook.py` | the nightly refresh: ship the code, build the notebook, schedule it |
-| `src/files.py` | the working files <-> the lakehouse `Files/` section, as a diff |
-| `src/schema.sql`, `src/graph.py` | the database, the terms, the ranking, the lineage walk, the read-back |
-| `src/wiki.py` | the markdown projection |
-| `src/viz.py`, `src/graph_template.html` | the standalone `graph.html` |
-| `src/queries.sql` | verification and demo SQL |
-| `src/selftest.py` | the whole pipeline on a synthetic tenant |
-| `context.json` | which lakehouse the context went into; the only thing besides the tables that both sides touch |
+| `fabcontext/__init__.py` | `harvest()` - the one call, and the step timing table |
+| `fabcontext/_fabric/` | everything that talks to Fabric: tokens, REST, the workspace handle, OneLake files, Delta I/O, the TMSL patterns |
+| `fabcontext/common.py` | slugs, node ids, term normalisation, DAX stripping, the node/edge emitter |
+| `fabcontext/api.py` | the REST calls, one per thing the harvest wants to know |
+| `fabcontext/fetch.py` | Fabric -> `raw/`, the query log included |
+| `fabcontext/parse_model.py` | TMSL -> tables, measures, terms, DAX references, source bindings |
+| `fabcontext/parse_report.py` | PBIR and PBIR-Legacy -> pages, visuals, field references |
+| `fabcontext/parse_code.py` | notebooks and pipelines -> reads, feeds, runs |
+| `fabcontext/parse.py` | orchestrates the parsers, the scanner, the audit log, the query log, external stubs, profiles |
+| `fabcontext/profiling.py` | Delta logs and DataFusion value scans -> `raw/*/profiles/` |
+| `fabcontext/publish.py` | the context into a lakehouse, as Delta |
+| `fabcontext/files.py` | the working files <-> the lakehouse `Files/` section, as a diff |
+| `fabcontext/schema.sql`, `fabcontext/graph.py` | the database, the terms, the ranking, the lineage walk, the read-back |
+| `fabcontext/wiki.py` | the markdown projection |
+| `fabcontext/viz.py`, `fabcontext/graph_template.html` | the standalone `graph.html` |
+| `tests/` | the whole pipeline on a synthetic tenant |
+| `docs/fabric-runtime.txt` | what the Fabric Python 3.12 runtime ships; the dependency list rests on it |
 | `ask/context.py` | opening the published tables, and read-only queries over them |
 | `ask/fabric.py` | live DAX, live column values, and the store attachment for `sql` |
 | `ask/__main__.py` | `python -m ask` |
@@ -288,7 +313,7 @@ freshness.
 - **Dataflows Gen2** only expose a definition when CI/CD is enabled; otherwise only the
   scanner's metadata is available.
 - **Term normalisation is a word-list**, not semantics. `Revenue` and `Net Sales` share no
-  word and stay apart until `src/aliases.yaml` says otherwise. Sorting the words loses
+  word and stay apart until the `aliases=` argument says otherwise. Sorting the words loses
   order: a term page lists every alias so a wrong merge is visible.
 - **A model bound through a SQL endpoint outside the harvest** is a stub with the endpoint
   id only; its lakehouse and workspace stay unknown until that workspace is harvested.

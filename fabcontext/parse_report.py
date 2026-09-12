@@ -12,9 +12,9 @@ import os
 import re
 from typing import Dict, Iterator, List, Optional, Tuple
 
-from common import (Emitter, is_exact_term, node_id, norm_dax, read_json, read_text,
+from .common import (Emitter, is_exact_term, node_id, norm_dax, read_json, read_text,
                     term_id, unresolved_id)
-from parse_model import ModelIndex, extract_dax_refs
+from .parse_model import ModelIndex, extract_dax_refs
 
 # The wrappers a field reference can appear under in either format.
 _FIELD_KINDS = ("Measure", "Column", "HierarchyLevel", "Aggregation", "SparklineData")

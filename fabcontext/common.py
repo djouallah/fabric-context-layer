@@ -8,31 +8,10 @@ from __future__ import annotations
 import json
 import os
 import re
-import tempfile
 import unicodedata
 from typing import Any, Dict, Iterable, Iterator, List, Optional
 
-HERE = os.path.dirname(os.path.abspath(__file__))     # src/, where the code and .sql live
-ROOT = os.path.dirname(HERE)                          # the repo: Python, and no data
-
-# Everything the harvest reads or writes lives in the lakehouse - the graph as Delta tables
-# under Tables/, raw/, build/, wiki/ and graph.html under Files/ - and is worked on in a
-# folder outside the repo, one per context. FABRIC_CONTEXT_CACHE moves it.
-CACHE_DIR = os.environ.get("FABRIC_CONTEXT_CACHE") or os.path.join(
-    os.environ.get("LOCALAPPDATA") or tempfile.gettempdir(), "fabric-context")
-
-
-def slug(target: str) -> str:
-    """A folder name for a `<workspace>/<lakehouse>` target: readable, and stable across
-    runs so the working copy is found again."""
-    return re.sub(r"[^0-9A-Za-z._-]+", "-", str(target or "context")).strip("-") or "context"
-
-
-def workdir(target: str) -> str:
-    """Where the working copy of `target`'s files lives. Created on demand."""
-    path = os.path.join(CACHE_DIR, slug(target))
-    os.makedirs(path, exist_ok=True)
-    return path
+HERE = os.path.dirname(os.path.abspath(__file__))     # where schema.sql and the template live
 
 GUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 
@@ -88,10 +67,13 @@ _KEEP = {"ytd", "mtd", "qtd", "wtd", "ly", "py", "yoy", "mom", "pct", "avg",
 _KEEP_PLURAL = {"sales", "expenses", "goods", "analytics", "logistics", "statistics",
                 "receivables", "payables", "earnings", "savings", "proceeds"}
 
-# Hand-written merges the word lists cannot make ("Net Sales" is "revenue"). Optional:
+# Hand-written merges the word lists cannot make ("Net Sales" is "revenue"), as
+# {term_id: [spelling, ...]}. Passed in by the caller, or read from an optional aliases.yaml
+# sitting beside this file:
 #     revenue: [Net Sales, Turnover]
 ALIAS_FILE = os.path.join(HERE, "aliases.yaml")
-_MANUAL: Optional[Dict[str, List[str]]] = None
+_FILE_ALIASES: Optional[Dict[str, List[str]]] = None
+_GIVEN: Dict[str, List[str]] = {}
 _OVERRIDES: Optional[Dict[str, str]] = None
 
 
@@ -123,23 +105,49 @@ def term_tokens(name: str) -> List[str]:
     return sorted(dict.fromkeys(out))
 
 
-def manual_aliases() -> Dict[str, List[str]]:
-    """{term id: [alias, ...]} from src/aliases.yaml, or {} when there is no such file."""
-    global _MANUAL
-    if _MANUAL is None:
-        _MANUAL = {}
+def _normalise(mapping: Dict) -> Dict[str, List[str]]:
+    out: Dict[str, List[str]] = {}
+    for tid, aliases in (mapping or {}).items():
+        if isinstance(aliases, str):
+            aliases = [aliases]
+        out[str(tid)] = [str(a) for a in (aliases or [])]
+    return out
+
+
+def set_aliases(mapping: Optional[Dict[str, List[str]]]) -> None:
+    """Merge `mapping` into the hand-written aliases, for this process.
+
+    Called before parsing, not after: a term id is decided the moment a measure name is
+    normalised, so an alias that arrives later would merge the alias rows without merging the
+    terms themselves.
+    """
+    global _OVERRIDES
+    _GIVEN.clear()
+    _GIVEN.update(_normalise(mapping or {}))
+    _OVERRIDES = None
+
+
+def manual_aliases(extra: Optional[Dict[str, List[str]]] = None) -> Dict[str, List[str]]:
+    """{term id: [alias, ...]} - what `set_aliases` was given, merged over aliases.yaml when
+    one is present. `{}` when there is neither."""
+    global _FILE_ALIASES
+    if extra is not None:
+        set_aliases(extra)
+    if _FILE_ALIASES is None:
+        _FILE_ALIASES = {}
         if os.path.exists(ALIAS_FILE):
             try:
                 import yaml
                 with open(ALIAS_FILE, "r", encoding="utf-8") as fh:
-                    data = yaml.safe_load(fh) or {}
-                for tid, aliases in data.items():
-                    if isinstance(aliases, str):
-                        aliases = [aliases]
-                    _MANUAL[str(tid)] = [str(a) for a in (aliases or [])]
+                    _FILE_ALIASES = _normalise(yaml.safe_load(fh) or {})
             except Exception as exc:                     # noqa: BLE001 - optional file
                 print("[warn] " + ALIAS_FILE + ": " + str(exc)[:120])
-    return _MANUAL
+    if not _GIVEN:
+        return dict(_FILE_ALIASES)
+    merged = dict(_FILE_ALIASES)
+    for tid, names in _GIVEN.items():
+        merged[tid] = list(dict.fromkeys(list(merged.get(tid, [])) + names))
+    return merged
 
 
 def _overrides() -> Dict[str, str]:

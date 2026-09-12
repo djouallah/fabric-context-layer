@@ -16,3 +16,8 @@ context.json
 # The evals set is GENERATED from whichever tenant was harvested (ask evals generate),
 # so it carries that tenant's workspace and model GUIDs. Regenerable, not source.
 ask/evals/questions.yaml
+
+.venv/
+dist/
+build/
+*.egg-info/

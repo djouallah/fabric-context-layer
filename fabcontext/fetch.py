@@ -27,13 +27,18 @@ import shutil
 import time
 from typing import Dict, List, Optional
 
-import fabric_api as api
-from common import iso, page_slug, read_json, write_json
-
-RAW = ""          # the working raw/ folder; run.py sets it from common.workdir()
+from . import api
+from ._fabric import Workspace
+from .common import iso, page_slug, read_json, write_json
 
 # Item types whose definition we ask for. Everything else is inventory only.
 DEFINABLE = tuple(api.ITEM_ENDPOINT)
+
+
+def _utcnow() -> dt.datetime:
+    """UTC now, naive - every timestamp the harvest writes is naive UTC, and the audit
+    log is keyed by UTC day."""
+    return dt.datetime.now(dt.timezone.utc).replace(tzinfo=None)
 
 
 def _log(msg: str) -> None:
@@ -48,10 +53,10 @@ def _safe_part_path(base: str, rel: str) -> str:
     return os.path.join(base, *parts)
 
 
-def harvest(workspaces: List[str], days: int = 28, refresh: bool = False,
+def harvest(raw: str, workspaces: List[str], days: int = 28, refresh: bool = False,
             scanner: bool = True, activity: bool = True, query_log: bool = False,
             stale_after_days: float = 1.0) -> Dict[str, str]:
-    """Harvest each workspace into raw/. Returns {workspace name: raw folder}.
+    """Harvest each workspace into `raw`. Returns {workspace name: raw folder}.
 
     `query_log` reads each workspace's monitoring Eventhouse for the DAX that actually ran;
     it is off by default because workspace monitoring bills against the capacity, and a
@@ -61,8 +66,6 @@ def harvest(workspaces: List[str], days: int = 28, refresh: bool = False,
     The scanner result and the store table lists have no such signal - they are cached on
     the file simply existing, which under a schedule would freeze them forever. They are
     refetched once they are older than `stale_after_days`."""
-    from duckrun.workspace import Workspace
-
     ftoken = api.fabric_token()
     folders: Dict[str, str] = {}
     ws_ids: List[str] = []
@@ -70,19 +73,19 @@ def harvest(workspaces: List[str], days: int = 28, refresh: bool = False,
     for name in workspaces:
         ws = Workspace(name)
         display = ws.display_name
-        folder = os.path.join(RAW, page_slug(display, ws.id))
+        folder = os.path.join(raw, page_slug(display, ws.id))
         os.makedirs(folder, exist_ok=True)
         folders[display] = folder
         ws_ids.append(ws.id)
-        _log("workspace " + display + " (" + ws.id + ") -> " + os.path.relpath(folder, RAW))
+        _log("workspace " + display + " (" + ws.id + ") -> " + os.path.relpath(folder, raw))
         _harvest_workspace(ws.id, display, folder, ftoken, refresh, stale_after_days)
         if query_log:
             _harvest_query_log(ws.id, display, folder, ftoken, days, refresh)
 
     if scanner:
-        _harvest_scanner(ws_ids, refresh, stale_after_days)
+        _harvest_scanner(raw, ws_ids, refresh, stale_after_days)
     if activity:
-        _harvest_activity(days, refresh)
+        _harvest_activity(raw, days, refresh)
     return folders
 
 
@@ -205,8 +208,9 @@ def _harvest_stores(ws_id: str, folder: str, items: List[Dict], ftoken: str,
              + str(len(tables)) + " tables")
 
 
-def _harvest_scanner(ws_ids: List[str], refresh: bool, stale_after_days: float = 1.0) -> None:
-    path = os.path.join(RAW, "scanner.json")
+def _harvest_scanner(raw: str, ws_ids: List[str], refresh: bool,
+                     stale_after_days: float = 1.0) -> None:
+    path = os.path.join(raw, "scanner.json")
     if not refresh and not _stale(path, stale_after_days):
         _log("scanner: cached")
         return
@@ -231,15 +235,15 @@ def _harvest_scanner(ws_ids: List[str], refresh: bool, stale_after_days: float =
              "responses with DAX and mashup expressions' is probably off")
 
 
-def _harvest_activity(days: int, refresh: bool) -> None:
+def _harvest_activity(raw: str, days: int, refresh: bool) -> None:
     """One file per UTC day. Retention is 30 days; today and yesterday are always refetched
     because they are still filling up."""
     token = api.pbi_token()
-    today = dt.datetime.utcnow().date()
+    today = _utcnow().date()
     total = 0
     for back in range(min(days, 30)):
         day = (today - dt.timedelta(days=back)).isoformat()
-        path = os.path.join(RAW, "activity", day + ".json")
+        path = os.path.join(raw, "activity", day + ".json")
         if os.path.exists(path) and not refresh and back > 1:
             total += len(read_json(path, []) or [])
             continue
@@ -308,7 +312,7 @@ def _harvest_query_log(ws_id: str, display: str, folder: str, ftoken: str,
         _log("  [warn] no token for " + db["cluster"] + ": " + str(exc)[:150])
         return
 
-    today = dt.datetime.utcnow().date()
+    today = _utcnow().date()
     window = min(days, 30)
     total = rows_kept = 0
     for back in range(window):
@@ -335,6 +339,6 @@ def _harvest_query_log(ws_id: str, display: str, folder: str, ftoken: str,
                {"workspace_id": ws_id, "workspace": display, "database": db["database"],
                 "cluster": db["cluster"], "days": window,
                 "from": (today - dt.timedelta(days=window - 1)).isoformat(),
-                "to": today.isoformat(), "harvested_at": dt.datetime.utcnow().isoformat()})
+                "to": today.isoformat(), "harvested_at": _utcnow().isoformat()})
     _log("  query log: " + str(total) + " queries in " + str(rows_kept)
          + " distinct texts over " + str(window) + " days")

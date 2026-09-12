@@ -1,0 +1,9 @@
+# The Fabric Python 3.12 runtime's versions, pinned exactly (docs/fabric-runtime.txt).
+#
+# Not a preference - a correctness requirement for the test suite. A laptop normally resolves
+# NEWER duckdb and deltalake than Fabric ships, so a suite green against those proves nothing
+# about the runtime the package actually targets. deltalake in particular moved its Arrow
+# interop between 1.2 and 1.5.
+duckdb==1.4.4
+deltalake==1.2.1
+pytest>=7

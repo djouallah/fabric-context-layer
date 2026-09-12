@@ -9,9 +9,11 @@ from __future__ import annotations
 import re
 from typing import Dict, List, Optional, Tuple
 
-from duckrun.workspace import _M_TABLE_READ, _ONELAKE_REF, _SQL_DATABASE_REF
+from ._fabric.patterns import (M_TABLE_READ as _M_TABLE_READ,
+                               ONELAKE_REF as _ONELAKE_REF,
+                               SQL_DATABASE_REF as _SQL_DATABASE_REF)
 
-from common import (Emitter, is_exact_term, m_text, node_id, norm_dax, strip_dax,
+from .common import (Emitter, is_exact_term, m_text, node_id, norm_dax, strip_dax,
                     term_id, unresolved_id)
 
 # A qualified field reference: 'Sales Table'[Amount] or Sales[Amount].
@@ -228,7 +230,7 @@ def _emit_source(table: Dict, partitions: List[Dict], tid: str, guid: str, ws_na
     """Bind a model table to the physical table it reads - the seam between the graph layer
     and the relational layer. The edge carries the source workspace id when the M names
     one, so an unharvested store can still be located."""
-    from duckrun.workspace import _partition_table
+    from ._fabric.patterns import partition_table as _partition_table
 
     tname = table.get("name")
     for part in partitions:

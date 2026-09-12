@@ -14,11 +14,11 @@ import os
 import re
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from common import (GUID, Emitter, iso, node_id, read_json, term_id,
+from .common import (GUID, Emitter, iso, node_id, read_json, term_id,
                     unresolved_id, walk_files)
-from parse_code import StoreIndex, parse_notebook, parse_pipeline
-from parse_model import ModelIndex, extract_dax_refs, parse_model
-from parse_report import parse_report
+from .parse_code import StoreIndex, parse_notebook, parse_pipeline
+from .parse_model import ModelIndex, extract_dax_refs, parse_model
+from .parse_report import parse_report
 
 VIEW_ACTIVITIES = ("ViewReport", "ViewDashboard", "ViewTile", "ViewArtifact", "ReadArtifact",
                    "ViewDataflow", "ViewSemanticModel", "ViewDataset")
@@ -94,7 +94,9 @@ def build(raw_dir: str, build_dir: str) -> Dict[str, int]:
 
         wid = node_id("workspace", ws_id)
         items_path = os.path.join(folder, "items.json")
-        harvested_at = (dt.datetime.utcfromtimestamp(os.path.getmtime(items_path)).isoformat()
+        harvested_at = (dt.datetime.fromtimestamp(os.path.getmtime(items_path),
+                                                  dt.timezone.utc)
+                        .replace(tzinfo=None).isoformat()
                         if os.path.exists(items_path) else None)
         g.node(wid, "workspace", ws_name, workspace=ws_name, item_id=ws_id,
                description=ws.get("description"), capacity_id=ws.get("capacityId"),

@@ -10,9 +10,9 @@ from __future__ import annotations
 import re
 from typing import Dict, List, Optional, Set, Tuple
 
-from duckrun.workspace import _walk_activities
+from ._fabric.patterns import walk_activities as _walk_activities
 
-from common import Emitter, GUID, node_id, unresolved_id
+from .common import Emitter, GUID, node_id, unresolved_id
 
 # --- table reads and writes, in two families ------------------------------------
 # Code patterns match anywhere in a cell. SQL patterns match only inside SQL text - a
@@ -58,8 +58,8 @@ def _sql_text(code: str) -> str:
 _ABFSS = re.compile(
     r"abfss://([^@\s\"']+)@onelake\.dfs\.fabric\.microsoft\.com/([^/\s\"']+)/Tables/"
     r"(?:([^/\s\"']+)/)?([^/\s\"'\)]+)")
-# duckrun.connect("workspace/lakehouse.lakehouse/schema")
-_DUCKRUN_CONNECT = re.compile(r"""connect\(\s*["']([^"']+)["']""")
+# A notebook opening a store by path: connect("workspace/lakehouse.lakehouse/schema").
+_CONNECT_PATH = re.compile(r"""connect\(\s*["']([^"']+)["']""")
 # SQL keywords a bare FROM match must not capture.
 _SQL_NOISE = {"select", "where", "group", "order", "having", "limit", "join", "on", "as",
               "values", "set", "when", "then", "else", "end", "union", "all", "by",
@@ -175,7 +175,7 @@ def parse_notebook(nb: Dict, item: Dict, ws_name: str, g: Emitter, stores: Store
                                          re.I) else reads
             bucket[target] = "abfss path"
 
-        for match in _DUCKRUN_CONNECT.finditer(code):
+        for match in _CONNECT_PATH.finditer(code):
             bits = match.group(1).split("/")
             if len(bits) >= 2 and bits[1].lower().endswith(".lakehouse"):
                 store = stores.store_by_name.get(bits[1][:-len(".lakehouse")].lower())
