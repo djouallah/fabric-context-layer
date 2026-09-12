@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fabcontext"
-version = "0.1.0"
+version = "0.1.1"
 description = "Harvest a Microsoft Fabric tenant into a ranked context layer, published as Delta tables in a lakehouse."
 readme = "README.md"
 license = { text = "MIT" }

@@ -19,7 +19,7 @@ import tempfile
 import time
 from typing import Dict, List, Optional, Sequence, Union
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = ["harvest", "build_and_publish", "open_context", "__version__"]
 
@@ -54,7 +54,8 @@ def _work_dirs(work: str):
     wiki_dir = os.path.join(work, "wiki")
     for folder in (raw, build, wiki_dir):
         os.makedirs(folder, exist_ok=True)
-    return raw, build, wiki_dir, os.path.join(work, "graph.html")
+    return (raw, build, wiki_dir, os.path.join(work, "graph.html"),
+            os.path.join(work, "context.md"))
 
 
 def _target(to: Optional[str], first_workspace: str):
@@ -80,7 +81,7 @@ def build_and_publish(work: str, store, *, profile: bool = True, values: bool = 
     from . import files, graph, parse, profiling, publish
 
     step, rows = _steps(log)
-    raw, build, wiki_dir, graph_html = _work_dirs(work)
+    raw, build, wiki_dir, graph_html, context_md = _work_dirs(work)
 
     def _build():
         parse.build(raw, build)
@@ -96,7 +97,7 @@ def build_and_publish(work: str, store, *, profile: bool = True, values: bool = 
         if wiki:
             from . import viz
             from . import wiki as wiki_mod
-            step("wiki", wiki_mod.render, con, wiki_dir)
+            step("wiki", wiki_mod.render, con, wiki_dir, context_md)
             step("graph.html", viz.render, con, graph_html)
     finally:
         con.close()
@@ -145,7 +146,7 @@ def harvest(workspaces: Union[str, Sequence[str]], to: Optional[str] = None, *,
 
     own_work = work is None
     work = work or tempfile.mkdtemp(prefix="fabcontext_")
-    raw, _build, _wiki, _html = _work_dirs(work)
+    raw, _build, _wiki, _html, _md = _work_dirs(work)
     try:
         if not created:
             # The previous harvest. Its absence is not an error - a lakehouse someone made by

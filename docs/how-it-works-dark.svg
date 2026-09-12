@@ -64,7 +64,7 @@ text{font-family:'Segoe Print','Bradley Hand','Comic Sans MS','Chalkboard SE',cu
 <text x='78.0' y='392.0' font-size='15' text-anchor='start' class='ink'>Tables/</text>
 <text x='150.0' y='392.0' font-size='14' text-anchor='start' class='soft'>the ranked graph</text>
 <text x='78.0' y='416.0' font-size='15' text-anchor='start' class='ink'>Files/</text>
-<text x='150.0' y='416.0' font-size='14' text-anchor='start' class='soft'>raw, wiki, graph.html</text>
+<text x='150.0' y='416.0' font-size='14' text-anchor='start' class='soft'>raw, wiki, context.md, graph.html</text>
 <text x='78.0' y='440.0' font-size='12' text-anchor='start' class='soft' font-style='italic'>one per tenant, hidden - ideally</text>
 <path class='s' d='M560.2 62.0 L678.6 63.6 L800.9 63.5 L919.2 61.5'/>
 <path class='s' d='M559.1 62.6 L679.3 60.8 L799.8 63.3 L920.6 61.5'/>
@@ -92,7 +92,7 @@ text{font-family:'Segoe Print','Bradley Hand','Comic Sans MS','Chalkboard SE',cu
 <path class='s' d='M899.3 252.0 L793.3 253.1 L687.6 253.0 L580.2 252.8'/>
 <path class='s' d='M580.4 252.4 L579.1 235.8 L578.8 222.2 L579.2 208.7'/>
 <path class='s' d='M580.1 252.3 L580.4 237.9 L580.0 221.1 L580.6 208.5'/>
-<text x='740.0' y='237.0' font-size='16' text-anchor='middle' class='ink'>search  →  define  →  rank 1</text>
+<text x='740.0' y='237.0' font-size='16' text-anchor='middle' class='ink'>read context.md  →  rank 1</text>
 <path class='ss' d='M578.5 234.6 Q473.8 282.2 404.8 371.2'/>
 <path class='ss' d='M576.6 235.2 Q473.8 282.2 404.7 371.1'/>
 <path class='ss' d='M404.5 373.0 L406.6 358.6'/>

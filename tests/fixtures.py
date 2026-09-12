@@ -24,6 +24,7 @@ NOTEBOOK = "77777777-7777-7777-7777-777777777777"
 PIPELINE = "88888888-8888-8888-8888-888888888888"
 WS2 = "99999999-1111-1111-1111-111111111111"          # a workspace nobody harvested
 LH2 = "99999999-2222-2222-2222-222222222222"          # its lakehouse, bound by model B
+DEFAULT_MODEL = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"  # Fabric's own, beside sales_lh
 
 
 def _w(path, obj):
@@ -63,6 +64,28 @@ def _model_a():
         ],
         "relationships": [{"name": "r1", "fromTable": "Sales", "fromColumn": "OrderDate",
                            "toTable": "Date", "toColumn": "Date"}]}}
+
+
+def _default_model():
+    """The semantic model Fabric creates beside a lakehouse by itself.
+
+    Tables synced from the lakehouse - including the sandbox table nothing else reads -
+    and not one measure. Left in the graph it defines nothing, yet its `sources_from`
+    edges would promote `scratch_tmp` to tier 1 and hand it a section of its own."""
+    return {"compatibilityLevel": 1604, "model": {
+        "expressions": [{"name": "DirectLake", "kind": "m", "expression": [
+            "let",
+            '    Source = AzureStorage.DataLake("https://onelake.dfs.fabric.microsoft.com/'
+            + WS + "/" + LH + '", [HierarchicalNavigation=true])',
+            "in", "    Source"]}],
+        "tables": [
+            {"name": name,
+             "partitions": [{"name": name, "mode": "directLake", "source": {
+                 "type": "entity", "entityName": name, "schemaName": "dbo",
+                 "expressionSource": "DirectLake"}}],
+             "columns": [{"name": "X", "dataType": "string"}], "measures": []}
+            for name in ("fact_sales", "dim_customer", "dim_date", "scratch_tmp")],
+        "relationships": []}}
 
 
 def _model_b():
@@ -153,7 +176,8 @@ def _scanner():
             {"id": MODEL_A, "name": "Sales Model", "configuredBy": "amal@example.com",
              "endorsementDetails": {"endorsement": "Certified", "certifiedBy": "governance"},
              "targetStorageMode": "DirectLake"},
-            {"id": MODEL_B, "name": "Finance Model", "configuredBy": "rui@example.com"}],
+            {"id": MODEL_B, "name": "Finance Model", "configuredBy": "rui@example.com"},
+            {"id": DEFAULT_MODEL, "name": "sales_lh", "targetStorageMode": "DirectLake"}],
         "reports": [
             {"id": REPORT_A, "name": "Sales Overview", "datasetId": MODEL_A,
              "modifiedBy": "amal@example.com", "modifiedDateTime": "2026-08-01T00:00:00"},
@@ -175,6 +199,7 @@ def make_raw(raw: str) -> None:
         {"id": NOTEBOOK, "type": "Notebook", "displayName": "load_sales"},
         {"id": PIPELINE, "type": "DataPipeline", "displayName": "nightly"},
         {"id": LH, "type": "Lakehouse", "displayName": "sales_lh"},
+        {"id": DEFAULT_MODEL, "type": "SemanticModel", "displayName": "sales_lh"},
     ]
     _w(os.path.join(ws_dir, "workspace.json"),
        {"id": WS, "displayName": "Sales Demo", "capacityId": "cap1"})
@@ -187,7 +212,8 @@ def make_raw(raw: str) -> None:
 
     defs = os.path.join(ws_dir, "definitions")
     for guid, name, bim in ((MODEL_A, "Sales Model", _model_a()),
-                            (MODEL_B, "Finance Model", _model_b())):
+                            (MODEL_B, "Finance Model", _model_b()),
+                            (DEFAULT_MODEL, "sales_lh", _default_model())):
         folder = os.path.join(defs, "SemanticModel", guid)
         _w(os.path.join(folder, "item.json"),
            {"id": guid, "type": "SemanticModel", "displayName": name, "format": "TMSL"})

@@ -1,15 +1,19 @@
-"""Live calls to Fabric - the only network code on the query side.
+"""Live calls to Fabric - the only network code on the query side, and the only way here
+to learn a number.
 
-Two things, both read-only and both DAX: run a query on a semantic model, and list the
-values of a column when the harvest carries no profile for it. Tokens and HTTP come from
-fabcontext's Fabric layer, the same one the harvest uses, but nothing here touches the raw/
-folder. Numbers about the data only ever come from here.
+One thing, read-only: run a DAX query on a semantic model. The model's workspace and item
+ids come from `context.md`, so no lookup precedes the call. Tokens and HTTP come from
+fabcontext's Fabric layer, the same one the harvest uses.
+
+There is no SQL path. A table no semantic model covers has no agreed definition behind it,
+and inventing one in SQL is the thing the context layer exists to stop - so such a question
+is answered by saying that, not by computing it.
 """
 from __future__ import annotations
 
 import re
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 PBI_API = "https://api.powerbi.com/v1.0/myorg"
 MAX_ROWS_DEFAULT = 100
@@ -33,10 +37,6 @@ def dax_is_query(query: str) -> bool:
     return _first_token(query) in ("EVALUATE", "DEFINE")
 
 
-def _dax_name(table: str, column: str) -> str:
-    return "'" + table.replace("'", "''") + "'[" + column.replace("]", "]]") + "]"
-
-
 # ---------------------------------------------------------------- DAX
 
 def _error_text(resp) -> str:
@@ -54,7 +54,7 @@ def _error_text(resp) -> str:
                 "'Dataset Execute Queries REST API' is on, and you have Build permission "
                 "on the model.")
     elif resp.status_code == 404:
-        hint = " Check the workspace and dataset ids (python -m ask scope)."
+        hint = " Check the workspace and model ids - context.md prints both."
     return "HTTP " + str(resp.status_code) + ": " + (text or "no detail") + hint
 
 
@@ -86,121 +86,3 @@ def dax(workspace_id: str, dataset_id: str, query: str, max_rows: int = MAX_ROWS
     return {"query": query, "workspace_id": workspace_id, "dataset_id": dataset_id,
             "columns": columns, "rows": rows[:max_rows], "row_count": len(rows),
             "truncated": len(rows) > max_rows, "elapsed_ms": elapsed}
-
-
-def values(workspace_id: str, dataset_id: str, table: str, column: str,
-           limit: int = 50) -> Dict[str, Any]:
-    """Distinct values, min, max and distinct count of one model column, live."""
-    ref = _dax_name(table, column)
-    listing = dax(workspace_id, dataset_id,
-                  "EVALUATE TOPN(" + str(limit + 1) + ", VALUES(" + ref + "))", limit + 1)
-    vals = [next(iter(r.values())) for r in listing["rows"]]
-    vals = [v for v in vals if v is not None]
-    bounds = dax(workspace_id, dataset_id,
-                 'EVALUATE ROW("min", MIN(' + ref + '), "max", MAX(' + ref + '), '
-                 '"n", DISTINCTCOUNT(' + ref + "))", 1)
-    row = bounds["rows"][0] if bounds["rows"] else {}
-    return {"table": table, "column": column, "source": "live",
-            "values": sorted(vals, key=str)[:limit], "truncated": len(vals) > limit,
-            "min": row.get("[min]"), "max": row.get("[max]"), "n_distinct": row.get("[n]"),
-            "elapsed_ms": listing["elapsed_ms"] + bounds["elapsed_ms"]}
-
-
-# ---------------------------------------------------------------- SQL analytics endpoint
-
-# A lakehouse or warehouse answers T-SQL over TDS on its workspace's SQL analytics endpoint.
-# DuckDB's mssql community extension speaks TDS directly and takes an Entra access token, so
-# a store attaches into the same connection the context tables live in - a join across the
-# two is one query - and no ODBC driver has to be installed.
-SQL_SCOPE = "https://database.windows.net/.default"
-MSSQL_EXTENSION = "mssql"
-
-_ENDPOINTS: Dict[str, str] = {}
-_SQL_TOKEN: List[Any] = []
-
-
-class NoSqlEndpoint(Exception):
-    """The store has no reachable SQL analytics endpoint, or the extension is missing."""
-
-
-def sql_endpoint(workspace_id: str, item_id: str, kind: str = "lakehouse") -> str:
-    """The TDS hostname serving a lakehouse's or warehouse's SQL analytics endpoint.
-
-    Live, because the harvest records the endpoint's item id but not its hostname, and the
-    hostname is what a connection needs. Cached per process - it does not move.
-    """
-    key = str(workspace_id) + "/" + str(item_id)
-    if key in _ENDPOINTS:
-        return _ENDPOINTS[key]
-    from fabcontext._fabric import auth
-    from fabcontext._fabric.rest import request as _http_request
-
-    coll = "warehouses" if kind == "warehouse" else "lakehouses"
-    url = ("https://api.fabric.microsoft.com/v1/workspaces/" + str(workspace_id) + "/"
-           + coll + "/" + str(item_id))
-    resp = _http_request("GET", url, token=auth.fabric_token())
-    if resp.status_code >= 400:
-        raise NoSqlEndpoint("HTTP " + str(resp.status_code) + " reading " + coll[:-1]
-                            + " " + str(item_id) + ": " + (resp.text or "")[:200])
-    props = resp.json().get("properties") or {}
-    host = props.get("connectionString")
-    if not host:                                       # a lakehouse nests it one level down
-        sqlprops = props.get("sqlEndpointProperties") or {}
-        host = sqlprops.get("connectionString")
-        status = sqlprops.get("provisioningStatus")
-        if not host and status and status != "Success":
-            raise NoSqlEndpoint("the SQL endpoint for " + str(item_id) + " is "
-                                + str(status) + ", not ready to query")
-    if not host:
-        raise NoSqlEndpoint("no SQL analytics endpoint on " + coll[:-1] + " " + str(item_id))
-    _ENDPOINTS[key] = host
-    return host
-
-
-def sql_token() -> str:
-    """An Entra token for the SQL endpoint - a fifth audience, distinct from the four the
-    harvest uses."""
-    if _SQL_TOKEN:
-        return _SQL_TOKEN[0]
-    from fabcontext._fabric import auth
-
-    try:
-        _SQL_TOKEN.append(auth.sql_token())
-    except RuntimeError as exc:
-        raise NoSqlEndpoint(str(exc))
-    return _SQL_TOKEN[0]
-
-
-def attach_store(con, alias: str, database: str, host: str) -> str:
-    """ATTACH a lakehouse or warehouse read-only into an open DuckDB connection.
-
-    Returns the catalog alias the query should qualify its tables with. Idempotent: a store
-    already attached on this connection is left alone.
-    """
-    attached = {r[0] for r in con.execute("SELECT database_name FROM duckdb_databases()").fetchall()}
-    if alias in attached:
-        return alias
-    try:
-        con.execute("INSTALL " + MSSQL_EXTENSION + " FROM community")
-        con.execute("LOAD " + MSSQL_EXTENSION)
-    except Exception as exc:                           # noqa: BLE001
-        raise NoSqlEndpoint(
-            "the DuckDB '" + MSSQL_EXTENSION + "' community extension is needed to reach a "
-            "SQL endpoint and would not load: " + str(exc)[:200])
-    secret = "ctx_" + re.sub(r"[^0-9A-Za-z_]", "_", alias)
-    con.execute("CREATE OR REPLACE SECRET " + secret + " (TYPE mssql, PROVIDER config, "
-                "host $host, database $db, access_token $tok)",
-                {"host": host, "db": database, "tok": sql_token()})
-    # ATTACH takes no prepared parameter for its target, so the spec is inlined; the
-    # database is a Fabric display name, quoted the SQL way rather than trusted.
-    con.execute("ATTACH " + _quote_str("database=" + database) + " AS " + _quote_ident(alias)
-                + " (TYPE mssql, SECRET " + secret + ", READ_ONLY)")
-    return alias
-
-
-def _quote_ident(name: str) -> str:
-    return '"' + str(name).replace('"', '""') + '"'
-
-
-def _quote_str(text: str) -> str:
-    return "'" + str(text).replace("'", "''") + "'"

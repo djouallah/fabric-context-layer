@@ -1,44 +1,46 @@
 # ask/ - the query side
 
 `fabcontext` harvests Fabric and publishes the context into a lakehouse of its own: the
-ranked graph as one Delta table per published table under `Tables/dbo/`, and everything it was
-built from and rendered into - `raw/`, `build/`, `wiki/`, `graph.html` - under `Files/`.
-This folder is the other side. It reads `Tables/` only: it opens them read-only, answers
-questions from them, and runs DAX against a semantic model when a question needs a number.
+ranked graph as one Delta table per published table under `Tables/dbo/`, and everything it
+was built from and rendered into - `raw/`, `build/`, `wiki/`, `context.md`, `graph.html` -
+under `Files/`. This folder is the other side, and it is deliberately small.
 
-It takes one thing: the URL `fabcontext.harvest()` returned, passed as `--db`. That URL is the
-entire contract between the two halves - there is no shared file and no discovery. `--db`
-also accepts a local folder of Delta tables, or a `.duckdb` file.
-
-Reading a Delta table over OneLake costs a round trip per file, so the published tables are
-pulled once into a local copy under `%LOCALAPPDATA%\fabric-context`
-(`FABRIC_CONTEXT_CACHE` moves it). The next command opens that in milliseconds. `--refresh`
-re-pulls, `--no-cache` keeps none. `contract` prints which copy it used.
+**Two commands.**
 
 ```
-python -m ask contract                       what the lakehouse publishes, and what is missing
-python -m ask scope                          build time, workspaces, models, stores, counts
-python -m ask search "average price"         ranked hits: terms, measures, tables, columns
-python -m ask define "average price"         every definition, ranked, with the DAX
-python -m ask model <name|id> --table <t>    tables, columns, values, relationships, measures
-python -m ask table <store.schema.table>     columns and profile, who writes and reads it
-python -m ask lineage <node|name> [--down]   what feeds it, or what depends on it
-python -m ask usage <term|node>              reports, references, mentions, downstream
-python -m ask values <model> <table> <col>   distinct values and range, harvested or live
-python -m ask dax <model> "EVALUATE ..."     run DAX on the model (Power BI executeQueries)
-python -m ask sql "select ... from terms"    DuckDB SQL over the context tables themselves
-python -m ask evals generate | run | report  the benchmark
+python -m ask --db <url> context             fetch Files/context.md and print its path
+python -m ask dax <ws-guid>/<model-guid> "EVALUATE ..."
 ```
 
-`--json`, `--db`, `--refresh` and `--no-cache` are global and go BEFORE the subcommand:
-`python -m ask --json define "average price"`. Exit codes: 0 ok, 2 not found or ambiguous,
-3 refused (not a read-only query), 4 Fabric said no.
+`context.md` is the whole graph as one markdown file: every term with its ranked
+definitions and their DAX, every model with the two ids a DAX query executes against,
+column values, lineage, reports, and the long tail named under its store. It is the
+metadata, and it is read, not queried. One round trip fetches it - against the twelve Delta
+logs the old query side opened first - and the copy lands under `%LOCALAPPDATA%abric-context`
+(`FABRIC_CONTEXT_CACHE` moves it); `--refresh` re-fetches.
+
+`dax` is the only other call and the only source of a number. Every model section in the
+file prints a `run:` line carrying its `<workspace-guid>/<model-guid>`, so a number is one
+copy away and nothing is looked up. **The client opens no database**: no duckdb, no
+deltalake, no DuckDB extension. `tests/test_client_is_thin.py` asserts it.
+
+**There is no SQL.** A number comes from DAX calling a ranked measure by name, or it does
+not come. A table no semantic model covers has nothing in the tenant that agrees what its
+number means, so the answer is to say that and describe what the file knows - not to
+compute one and imply a definition nobody wrote.
+
+`--json`, `--db` and `--refresh` are global and go BEFORE the subcommand:
+`python -m ask --json context`. Exit codes: 0 ok, 2 not found, 3 refused (not a read-only
+DAX query), 4 Fabric said no.
+
+`ask/db.py` still pulls the published tables into DuckDB, for one caller: the benchmark
+below, which builds its questions out of the graph. Nothing a user asks goes through it.
 
 ## The contract
 
-The harvest side publishes tables; this side queries them. `python -m ask contract`
-checks the list below against the file, so a change on either side shows up as a missing
-table or column rather than a wrong answer.
+The harvest side publishes tables and renders `context.md` from them. The client reads the
+file; `ask/db.py` and `tests/test_publish.py` carry the column list below, so a change on
+either side shows up as a missing table or column rather than a wrong answer.
 
 | Published by `fabcontext` | Read here for | Required |
 |---|---|---|
@@ -52,33 +54,34 @@ table or column rather than a wrong answer.
 | `meta` | `built_at`, `schema_version`, the activity window, the workspaces | optional |
 | `attrs.profile` on column nodes; `attrs.columns`, `stats`, `values`, `n_rows` on lakehouse tables | filter literals and date ranges without a live call (from the harvest's profile step) | optional |
 
-When an optional part is missing the answer degrades rather than fails: no `aliases`
-means name-only search, no profile means `values` asks the model live, no `meta` means
-the file's modification time stands in for `built_at`.
+When an optional part is missing the rendered file degrades rather than fails: no
+`aliases` means a term lists no other spellings, no profile means a column carries no
+`values:` line and a filter literal needs one more DAX call, no `meta` means a thinner
+header.
 
 ## How a question flows
 
-1. `scope`: what is harvested, when it was built, which models can be executed.
-2. `search "<words>"`: candidates across terms, aliases, measures, tables, columns. Below
-   the threshold (0.55) the honest answer is "not in the harvested context".
-3. `define "<term>"`: the ranked definitions. The answer quotes rank 1, names its model,
-   and says whether the others disagree.
-4. `model <id> --table <t>`: the schema pack, with `profile.values` on columns the harvest
-   profiled.
-5. `values <model> <table> <column>`: live DAX (`TOPN(50, VALUES(...))`, `MIN`, `MAX`)
-   when the harvest carries no profile. This is the one place the query side fetches
-   something the harvest could have published; its profile step closes it.
-6. `dax <model> "<EVALUATE ...>"`: executeQueries, calling the ranked measure by name so
-   the governed logic runs, never a re-derivation of it.
-7. The answer: value, unit, period, then measure, model, rank, score, conflict note, the
+1. `context`: fetch the file, read its header and "How to use this file".
+2. Find the term - the `## Terms` index, then its `### term:` section. Below no matching
+   section, the honest answer is "not in the harvested context".
+3. Rank 1 of that term's table is the answer. It names its model and says whether the
+   others disagree.
+4. That model's `### model:` section gives the tables, columns and relationships, with
+   `profile.values` on columns the harvest profiled - so "NSW" comes from the data.
+5. `dax <ws>/<model> "<EVALUATE ...>"`: executeQueries, calling the ranked measure by name
+   so the governed logic runs, never a re-derivation of it.
+6. The answer: value, unit, period, then measure, model, rank, score, conflict note, the
    query that ran, and freshness.
+7. No measure covers it: say so, give the columns, who writes the table and what reads it,
+   and stop.
 
 `.claude/skills/fabric-context/SKILL.md` gives Claude Code this protocol.
 
 ## What it never does
 
 - Write to the context, or read `raw/` or `build/`.
-- Read the data any way but `EVALUATE`/`DEFINE` DAX; `sql` only sees the context tables.
+- Read the data any way but `EVALUATE`/`DEFINE` DAX.
+- Compute a number for something no measure defines.
 - Pick between conflicting definitions silently.
 
 ## The benchmark
@@ -100,8 +103,8 @@ in `ask/evals/results/`.
 model takes tens of seconds on the first query. Rows are capped (100 by default, 10,000
 hard).
 
-Opening the context itself is the other live call, and the expensive one: measured against
-a real lakehouse, opening eleven Delta logs took 90 s and every table
-read another 10 s - three minutes to fetch eight megabytes, because the cost is round
-trips, not bytes. Hence the downloaded copy described at the top; the first command after
-a publish pays it once, the rest take milliseconds.
+Fetching `context.md` is the other live call, and it is one request. The cost it replaces
+is why: measured against a real lakehouse, opening eleven Delta logs took 90 s and every
+table read another 10 s - three minutes to fetch eight megabytes, because the cost is round
+trips, not bytes. The benchmark still pays that, through `ask/db.py`; the client no longer
+does.

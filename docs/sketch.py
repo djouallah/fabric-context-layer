@@ -137,7 +137,7 @@ def build(dark):
     out.append(text(78, 392, "Tables/", 15))
     out.append(text(150, 392, "the ranked graph", 14, cls="soft"))
     out.append(text(78, 416, "Files/", 15))
-    out.append(text(150, 416, "raw, wiki, graph.html", 14, cls="soft"))
+    out.append(text(150, 416, "raw, wiki, context.md, graph.html", 14, cls="soft"))
     out.append(text(78, 440, "one per tenant, hidden - ideally", 12, cls="soft", italic=True))
 
     # D: agent
@@ -152,7 +152,7 @@ def build(dark):
 
     # E: search -> define -> rank 1
     paths(rough_rect(r, 580, 208, 320, 44))
-    out.append(text(740, 237, "search  →  define  →  rank 1", 16, anchor="middle"))
+    out.append(text(740, 237, "read context.md  →  rank 1", 16, anchor="middle"))
 
     # E -> C  (reads)
     paths(arrow(r, 578, 236, 404, 372, bend=28), "ss")

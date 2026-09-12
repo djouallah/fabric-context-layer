@@ -123,7 +123,66 @@ def build(build_dir: str, aliases: Optional[Dict[str, List[str]]] = None):
     return con, counts
 
 
+def _purge_default_models(con) -> int:
+    """Drop the semantic models Fabric made by itself and nobody ever built on.
+
+    A default semantic model appears beside every lakehouse, carries whatever tables got
+    synced into it, and defines nothing: no measure, so no definition, so no rank and no
+    answer. It is not a demoted thing to be listed quietly - it is not a thing at all, and
+    a tenant has one per lakehouse.
+
+    Leaving them in is actively wrong, not merely noisy. Their tables `sources_from` the
+    lakehouse tables underneath, and that edge is what marks a lakehouse table tier 1 - so
+    one auto-synced default model promotes a whole sandbox lakehouse to load-bearing and
+    the tier stops meaning anything. They also each get a section in `context.md` listing
+    every column and no measure.
+
+    The line is whether a person built on it, not whether Fabric made it: a measureless
+    model that a report or a pipeline actually points at stays, demoted by `_tier`, because
+    deleting it would break that report's lineage. Everything else goes, with its tables,
+    its columns and every edge that touched them.
+    """
+    con.execute("""
+        CREATE OR REPLACE TEMP TABLE _junk AS
+        WITH measureless AS (
+            SELECT m.id
+              FROM nodes m
+             WHERE m.kind = 'semantic_model'
+               AND m.item_id NOT IN (SELECT item_id FROM nodes
+                                      WHERE kind = 'measure' AND item_id IS NOT NULL)
+               -- nothing a person made points at it
+               AND m.id NOT IN (SELECT dst FROM edges WHERE rel <> 'contains')
+        )
+        SELECT id FROM measureless
+        UNION
+        SELECT n.id FROM nodes n JOIN measureless m ON n.parent_id = m.id
+        UNION
+        SELECT c.id FROM nodes c
+          JOIN nodes t ON c.parent_id = t.id
+          JOIN measureless m ON t.parent_id = m.id""")
+    dropped = con.execute("SELECT count(*) FROM _junk WHERE id LIKE 'semantic_model:%'"
+                          ).fetchone()[0]
+    con.execute("""
+        CREATE OR REPLACE TEMP TABLE _junk_items AS
+        SELECT DISTINCT item_id FROM nodes
+         WHERE id IN (SELECT id FROM _junk) AND item_id IS NOT NULL""")
+    con.execute("DELETE FROM edges WHERE src IN (SELECT id FROM _junk)"
+                "                     OR dst IN (SELECT id FROM _junk)")
+    con.execute("DELETE FROM nodes WHERE id IN (SELECT id FROM _junk)")
+    # The monitoring log counts a default model like any other - a row saying nobody
+    # queried the thing that could not have answered. It goes with the node.
+    for table in ("activity", "query_usage", "query_stats"):
+        con.execute("DELETE FROM " + table
+                    + " WHERE item_id IN (SELECT item_id FROM _junk_items)")
+    con.execute("DROP TABLE _junk_items")
+    con.execute("DROP TABLE _junk")
+    return dropped
+
+
 def _derive(con, aliases: Optional[Dict[str, List[str]]] = None) -> None:
+    # Before anything is derived: the nodes that should never have been in the graph.
+    _purge_default_models(con)
+
     # --- usage source: 28 days of activity, bucketed by what people did --------------
     con.execute("""
         CREATE OR REPLACE TABLE item_usage AS
@@ -299,9 +358,10 @@ def _tier(con) -> None:
     """Demote the long tail: what was harvested but nothing in the tenant refers to.
 
     The harvest stays wide on purpose - a lakehouse table list is one call per store, and
-    `ask sql` answers from tables no model covers. But most tables are read by nothing,
-    and a wiki that gives each of them a page is mostly chaff. The tier says which is
-    which; the renderers decide what to do about it, and nothing is deleted.
+    an inventory that stops at what a model happens to use cannot say what is unused,
+    where a table came from, or that a name exists at all. But most tables are read by
+    nothing, and a wiki that gives each of them a page is mostly chaff. The tier says
+    which is which; the renderers decide what to do about it, and nothing is deleted.
 
     Everything starts at tier 1 and is demoted from there, so a kind this function has
     never heard of keeps its page rather than silently vanishing.
@@ -318,12 +378,13 @@ def _tier(con) -> None:
         "   AND id NOT IN (SELECT dst FROM edges WHERE rel IN "
         + _sql_list(TIER1_RELS) + ")")
 
-    # A semantic model Fabric auto-created beside a lakehouse and nobody ever built on:
-    # no measure, no table. It defines nothing, so it can answer nothing.
+    # A semantic model that defines no measure can answer nothing. The ones nobody built
+    # on are already gone (see _purge_default_models); what reaches here is one a report
+    # or a pipeline points at, so it is kept for that lineage and demoted, not deleted.
     con.execute(
         "UPDATE nodes SET tier = 3 WHERE kind = 'semantic_model'"
-        "   AND id NOT IN (SELECT parent_id FROM nodes"
-        "                   WHERE parent_id IS NOT NULL AND kind = 'model_table')")
+        "   AND item_id NOT IN (SELECT item_id FROM nodes"
+        "                        WHERE kind = 'measure' AND item_id IS NOT NULL)")
 
     # A SQL endpoint is the plumbing under a lakehouse, never a thing anyone asks about.
     con.execute("UPDATE nodes SET tier = 3 WHERE kind = 'sql_endpoint'")

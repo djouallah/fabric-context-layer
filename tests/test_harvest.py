@@ -8,7 +8,8 @@ import os
 
 import pytest
 
-from tests.fixtures import LH, LH2, MODEL_A, MODEL_B, NOTEBOOK, PIPELINE, REPORT_A, WS, WS2
+from tests.fixtures import (DEFAULT_MODEL, LH, LH2, MODEL_A, MODEL_B, NOTEBOOK, PIPELINE,
+                            REPORT_A, WS, WS2)
 
 
 # --------------------------------------------------------------------------- parse
@@ -192,6 +193,31 @@ def test_the_long_tail_is_demoted(con):
     assert endpoints == 0                        # plumbing is never load-bearing
 
 
+def test_the_default_semantic_model_is_deleted_not_demoted(con):
+    """Fabric makes one beside every lakehouse, with synced tables and no measure. It
+    defines nothing, so it has no tier - it is not in the graph at all."""
+    assert con.execute("SELECT count(*) FROM nodes WHERE item_id = ?",
+                       [DEFAULT_MODEL]).fetchone()[0] == 0
+    assert con.execute("SELECT count(*) FROM edges WHERE src LIKE ? OR dst LIKE ?",
+                       ["%" + DEFAULT_MODEL + "%"] * 2).fetchone()[0] == 0
+    # the models a person built keep their tier
+    assert dict(con.execute("SELECT name, tier FROM nodes WHERE kind = 'semantic_model'"
+                            ).fetchall()) == {"Sales Model": 1, "Finance Model": 1}
+
+
+def test_the_default_model_does_not_promote_the_tail(con):
+    """Its tables `sources_from` every lakehouse table, the edge that means tier 1. Left in
+    the graph it would make a sandbox table look load-bearing and the tier mean nothing."""
+    assert con.execute("SELECT tier FROM nodes WHERE kind = 'lakehouse_table' "
+                       "AND name = 'scratch_tmp'").fetchone()[0] == 3
+    # the delete leaves nothing behind it: no edge, and no monitoring row either
+    assert con.execute("SELECT count(*) FROM edges e WHERE NOT EXISTS "
+                       "(SELECT 1 FROM nodes n WHERE n.id = e.src)").fetchone()[0] == 0
+    for table in ("query_stats", "query_usage", "activity"):
+        assert con.execute("SELECT count(*) FROM " + table + " WHERE item_id = ?",
+                           [DEFAULT_MODEL]).fetchone()[0] == 0, table
+
+
 def test_meta_records_provenance(con):
     meta = dict(con.execute("SELECT key, value FROM meta").fetchall())
     assert meta.get("built_at")
@@ -233,3 +259,70 @@ def test_the_table_page_lists_profiled_columns(wiki_dir):
     page = open(os.path.join(wiki_dir, "tables", "sales_lh--22222222.dbo.fact_sales.md"),
                 encoding="utf-8").read()
     assert "| Region | string | 2 |" in page
+
+
+# ----------------------------------------------------------------------------- context.md
+
+def _section(text, heading):
+    """One `### kind: name` block, up to the next one."""
+    assert heading in text, heading
+    rest = text.split(heading, 1)[1]
+    return heading + rest.split("\n### ", 1)[0]
+
+
+def test_context_md_is_one_file(con, rendered, context_md):
+    from fabcontext import wiki
+
+    out, md = rendered
+    counts = wiki.render(con, out, md)
+    assert counts["context_md"] == len(context_md.encode("utf-8")) > 2000
+    assert "\r" not in context_md            # written \n-only, whatever the platform
+
+
+def test_context_md_header_says_when_and_where(context_md):
+    assert "built_at: " in context_md
+    assert "schema_version: 4" in context_md
+    assert "- workspace Sales Demo (" + WS + ")" in context_md
+    assert "## How to use this file" in context_md
+    assert "Rank 1 is the answer" in context_md
+
+
+def test_context_md_ranks_the_competing_definitions(context_md):
+    section = _section(context_md, "### term: revenue\n")
+    assert "conflicting: yes" in section
+    assert "| 1 | Total Revenue | Sales Model |" in section
+    assert section.index("Total Revenue") < section.index("Finance Model")
+    assert section.count("```dax") == 3       # every definition's expression, not just rank 1
+    assert "SUM ( Sales[Amount] )" in section
+
+
+def test_context_md_carries_what_a_dax_call_needs(context_md):
+    section = _section(context_md, "### model: Sales Model\n")
+    assert MODEL_A in section and WS in section
+    assert "storage: DirectLake" in section
+    assert "#### measure: [Total Revenue] on Sales" in section
+    assert "values: NSW, VIC" in section       # filter literals, so nothing is invented
+    # The client has no lookup: the ids `ask dax` takes are copied straight off the page.
+    assert "run: python -m ask dax " + WS + "/" + MODEL_A in section
+
+
+def test_context_md_offers_no_route_but_dax(context_md):
+    """The file is the metadata; DAX is the only number. Nothing may suggest SQL."""
+    assert "ask sql" not in context_md and "select ... from" not in context_md
+    assert "**When no measure covers it, say so.**" in context_md
+    assert "python -m ask dax" in context_md
+
+
+def test_context_md_names_the_tail_without_detailing_it(context_md):
+    assert context_md.count("scratch_tmp") == 1
+    assert "not referenced (1)" in context_md
+    assert "#### table: sales_lh.dbo.scratch_tmp" not in context_md
+    assert "| Region | string | 2 |" in _section(context_md,
+                                                 "### store: sales_lh (lakehouse)\n")
+
+
+def test_context_md_shows_what_writes_what(context_md):
+    notebook = _section(context_md, "### notebook: load_sales\n")
+    assert "- writes: sales_lh.dbo.fact_sales" in notebook
+    pipeline = _section(context_md, "### pipeline: nightly\n")
+    assert "- refreshes: Sales Model (semantic model)" in pipeline

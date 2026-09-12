@@ -1,12 +1,19 @@
-"""Step 4: the published context -> wiki/, a folder of linked markdown pages.
+"""Step 4: the published context -> wiki/, a folder of linked markdown pages, and
+`context.md`, the same thing as one file.
 
 The graph is the source of truth; this is the readable projection of it. One page per item
 and one page per business term, wikilinked both ways, so a person in Obsidian and Claude
 Code in a terminal navigate the same thing. Pages stay short on purpose - the detail lives
 in the database and the page says where to look.
+
+`context.md` is that projection for a reader who cannot open the database: one file, fixed
+headings, no links to follow, so an agent greps a section instead of downloading twelve
+Delta tables first. It holds no numbers either - a number comes from DAX on a model,
+and the file carries the ids that call takes.
 """
 from __future__ import annotations
 
+import json
 import os
 import shutil
 from collections import defaultdict
@@ -171,7 +178,10 @@ class Wiki:
 
 # ---------------------------------------------------------------- page builders
 
-def render(con, out_dir: str) -> Dict[str, int]:
+def render(con, out_dir: str, context_md: Optional[str] = None) -> Dict[str, int]:
+    """Write `out_dir` as a wiki, and - when `context_md` names a path - the same context as
+    one markdown file. It sits beside the folder rather than inside it: the folder is rebuilt
+    from scratch on every run, and this file has no wikilinks to keep consistent with it."""
     if os.path.isdir(out_dir):
         shutil.rmtree(out_dir)
     w = Wiki(con, out_dir)
@@ -214,6 +224,8 @@ def render(con, out_dir: str) -> Dict[str, int]:
 
     _index_page(w, con)
     _claude_page(w, con)
+    if context_md:
+        counts["context_md"] = _context_page(w, con, context_md)
     return dict(counts)
 
 
@@ -415,7 +427,7 @@ def _store_page(w: Wiki, nid: str, node: dict) -> None:
     if tail:
         # No page each: nothing in the harvested workspaces reads them, so a page would
         # say only that. Named here so the store's inventory is still complete, and
-        # still queryable with `ask table <store>.<schema>.<name>`.
+        # still in the database, and named under its store in `context.md`.
         body += ["## Not referenced (" + str(len(tail)) + ")", "",
                  "Harvested, but no model, notebook or pipeline in these workspaces "
                  "reads or writes them.", "",
@@ -538,7 +550,8 @@ def _workspace_page(w: Wiki, nid: str, node: dict) -> None:
         body += ["## " + kind.replace("_", " ") + " (" + str(len(rows)) + ")", ""]
         body += ["- " + w.link(r) for r in used]
         if tail:
-            # An empty auto-created model, or a store whose tables nobody reads: named,
+            # A measureless model something still points at, or a store whose tables
+            # nobody reads: named,
             # so the workspace inventory is complete, but not worth a page.
             body += ["", "Empty or unreferenced, no page: "
                      + ", ".join("`" + w.nodes[r]["name"] + "`" for r in tail)]
@@ -616,9 +629,10 @@ written by hand. Nobody authored these pages, and nothing here was reviewed.
 There are {terms} business terms, {conf} of which have definitions that disagree.
 
 **Not everything harvested has a page here.** {tail} nodes - lakehouse tables no model,
-notebook or pipeline touches, empty models Fabric auto-created beside a lakehouse, SQL
-endpoints - are listed on their store or workspace page and nowhere else. They are still
-in the database: `python -m ask table <store>.<schema>.<name>` and `ask sql` read them.
+notebook or pipeline touches, SQL endpoints - are listed on their store or workspace page
+and nowhere else. (The semantic models Fabric auto-creates beside a lakehouse are not here
+at all: they define no measure, so they were dropped, not demoted.) They are still
+in the database, and named under their store in `context.md`.
 The absence of a page means nothing in these workspaces refers to it, not that it is gone.
 
 ## Two ways in
@@ -628,10 +642,10 @@ The absence of a page means nothing in these workspaces refers to it, not that i
   it reads, a table to the notebook that writes it. `index.md` lists what was harvested
   and every term with a conflict.
 - **Asking**: the same facts, from the database these pages were rendered from, through
-  the query side of the repo: `python -m ask search "<words>"`, `define "<term>"`,
-  `model <model>`, `lineage <node>`, `usage <term>`, and `dax <model> "<EVALUATE ...>"` to
-  run the ranked definition against the model. `python -m ask contract` says what the
-  database publishes. In Claude Code the `fabric-context` skill drives this.
+  `context.md`, the same context as one file: `python -m ask context` fetches it, and
+  `python -m ask dax <workspace_id>/<item_id> "<EVALUATE ...>"` runs the ranked
+  definition against its model. Those two are the whole client. In Claude Code the
+  `fabric-context` skill drives them.
 
 ## What the ranking means
 
@@ -663,14 +677,504 @@ picking one.
 ## Questions this folder answers
 
 - *Where is X defined and which definition should I trust?* - `terms/<x>.md`, or
-  `python -m ask define "<x>"`: quote the top expression, then say whether the others
-  disagree.
+  the `### term:` section of `context.md`: quote the top expression, then say whether
+  the others disagree.
 - *Which reports use X?* - the "Used in reports" table on the term page, or `usage`.
 - *What feeds X?* - the "Upstream" list on the term page, or `lineage`.
 - *What is X for <filter>?* - `model` for the schema and filter values, then `dax` calling
   the ranked measure by name. Only the query side does this; the pages hold no numbers.
 """.format(terms=n_terms, conf=n_conf, tail=n_tail)
     write_text(os.path.join(w.out, "CLAUDE.md"), text)
+
+
+# ---------------------------------------------------------------- context.md
+
+MAX_COLUMNS = 80        # per table, as the table pages cap them
+MAX_VALUES = 8          # distinct values quoted per column
+MAX_FIELDS = 40         # fields listed per report
+
+
+def _cell(value, limit: int = 200) -> str:
+    """One markdown table cell. A pipe or a newline inside a harvested name would end the
+    row early, so both are neutralised here - and DAX never goes in a cell at all."""
+    text = str(value if value is not None else "").replace("\r", " ").replace("\n", " ")
+    text = text.replace("|", "\\|").strip()
+    return (text[:limit] + "...") if len(text) > limit else text
+
+
+def _fence(expression) -> List[str]:
+    text = str(expression or "").strip()
+    return ["```dax", text or "(no expression captured)", "```"]
+
+
+def _dash(value) -> str:
+    """A missing field reads as `-`, not as the word None."""
+    return str(value) if value not in (None, "") else "-"
+
+
+def _eattr(attrs, key: str, default=None):
+    """One key out of an edge's attrs, which arrive as JSON text or as a dict."""
+    if isinstance(attrs, str):
+        try:
+            attrs = json.loads(attrs)
+        except ValueError:
+            return default
+    return attrs.get(key, default) if isinstance(attrs, dict) else default
+
+
+def _ref(w: Wiki, nid: str) -> str:
+    """A node named plainly. The wiki links; one file has nowhere to link to, so a thing is
+    named the way someone would type it into `ask`."""
+    if nid.startswith("unresolved:"):
+        return "`" + nid.split("/", 1)[-1] + "` (unresolved)"
+    node = w.nodes.get(nid)
+    if not node:
+        return "`" + nid + "`"
+    kind = node["kind"]
+    if kind == "lakehouse_table":
+        return (str(Wiki._attr(node, "store", "")) + "."
+                + str(Wiki._attr(node, "schema", "dbo")) + "." + node["name"])
+    if kind in ("measure", "report_measure"):
+        return "[" + node["name"] + "]"
+    if kind in ("model_table", "column"):
+        return _owner_label(w, nid)
+    return node["name"] + " (" + kind.replace("_", " ") + ")"
+
+
+def _refs(w: Wiki, nids) -> str:
+    return ", ".join(_ref(w, n) for n in sorted(set(nids), key=lambda n: _ref(w, n)))
+
+
+def _context_page(w: Wiki, con, path: str) -> int:
+    """The whole context as one markdown file. Returns its size in bytes.
+
+    Same facts as the wiki, addressed to a different reader. An agent that can read this
+    file needs the query side for one thing only: `ask dax`, for a number. There is no
+    other route - a table no model covers is described here and computed nowhere. The
+    long tail is named but not detailed; see `Wiki.is_tail`.
+    """
+    lines: List[str] = []
+    meta = dict(con.execute("SELECT key, value FROM meta").fetchall())
+    workspaces = []
+    try:
+        workspaces = json.loads(meta.get("workspaces") or "[]")
+    except ValueError:
+        pass
+    names = [str(ws.get("name")) for ws in workspaces] or ["Fabric"]
+
+    lines += ["# Fabric context: " + ", ".join(names[:6])
+              + (" and " + str(len(names) - 6) + " more" if len(names) > 6 else ""), ""]
+    lines += _context_header(w, con, meta, workspaces)
+    lines += _context_guide(con)
+    lines += _context_terms(w, con)
+    lines += _context_models(w, con)
+    lines += _context_reports(w)
+    lines += _context_flows(w)
+    lines += _context_stores(w)
+
+    text = "\n".join(lines).rstrip() + "\n"
+    write_text(path, text)
+    return len(text.encode("utf-8"))
+
+
+def _context_header(w: Wiki, con, meta: Dict[str, str], workspaces: List[dict]) -> List[str]:
+    n_terms, n_conf = con.execute(
+        "SELECT count(*), count(*) FILTER (WHERE conflicting) FROM terms").fetchone()
+    kinds = dict(con.execute(
+        "SELECT kind, count(*) FILTER (WHERE tier < 3) FROM nodes GROUP BY 1").fetchall())
+    tail = con.execute("SELECT count(*) FROM nodes WHERE tier >= 3").fetchone()[0]
+    lines = ["built_at: " + str(meta.get("built_at", "?"))
+             + " | schema_version: " + str(meta.get("schema_version", "?"))
+             + " | activity: " + str(meta.get("activity_window_days", "?")) + " days"
+             + (" (" + str(meta.get("activity_from"))[:10] + " .. "
+                + str(meta.get("activity_to"))[:10] + ")"
+                if meta.get("activity_from") else " (no audit log)"), ""]
+    for ws in workspaces:
+        lines.append("- workspace " + str(ws.get("name")) + " (" + str(ws.get("id")) + ")"
+                     + (", harvested " + str(ws.get("harvested_at"))[:19]
+                        if ws.get("harvested_at") else ""))
+    lines += ["",
+              "terms: " + str(n_terms) + " (" + str(n_conf) + " conflicting)"
+              + " | models: " + str(kinds.get("semantic_model", 0))
+              + " | reports: " + str(kinds.get("report", 0))
+              + " | notebooks: " + str(kinds.get("notebook", 0))
+              + " | pipelines: " + str(kinds.get("pipeline", 0))
+              + " | stores: " + str(kinds.get("lakehouse", 0) + kinds.get("warehouse", 0))
+              + " | tables: " + str(kinds.get("lakehouse_table", 0))
+              + " | tier-3 nodes named but not detailed: " + str(tail), ""]
+    return lines
+
+
+def _context_guide(con) -> List[str]:
+    """How to answer from this file. The wiki says the same thing to a person reading pages
+    (`_claude_page`); this says it to an agent holding one file and a terminal."""
+    n_conf = con.execute("SELECT count(*) FROM terms WHERE conflicting").fetchone()[0]
+    return ("""## How to use this file
+
+This is a **context layer**, harvested automatically from Microsoft Fabric. Nobody wrote
+these sections by hand and nothing in them was reviewed.
+
+**Find things by heading.** `### term: <term_id>` ranks every definition of a business term
+and shows its DAX. `### model: <name>` carries the model's `item_id` and `workspace_id` -
+what a DAX query executes against - its tables, its filter values and its measures.
+`### store: <name>` and `#### table:` carry the physical tables and who writes them.
+
+**Rank 1 is the answer.** Definitions are ranked by four signals, the way a search engine
+ranks pages: **authority** (certified beats promoted beats nothing; a model measure beats
+one defined inside a single report), **popularity** (how often the measure was actually
+evaluated, plus report opens and model refreshes), **relevance** (reports and visuals
+referencing it, plus an exact name match) and **freshness**. Take rank 1 and say so.
+
+**Rank is not correctness.** A popular, certified, wrong definition still ranks first.
+{conf} terms here have definitions that disagree; when one of them is the answer, disclose
+it in one line - which definition you used and that the others differ - rather than handing
+back a menu.
+
+**This file holds no numbers.** To compute one, copy the `run:` line from the model's
+section - it already carries the two ids - and call the ranked measure by name:
+
+    python -m ask dax <workspace_id>/<item_id> "EVALUATE ROW(\\"v\\", [<measure>])"
+
+That is the only other thing to run. Filter literals come from the `values:` on a column;
+when a column has none, one more DAX query fetches them:
+`EVALUATE TOPN(50, VALUES('<table>'[<column>]))`. Never invent a literal.
+
+**When no measure covers it, say so.** There is no SQL here and no second route to a
+number. A term with no definition, or a table no semantic model reads, has nothing in this
+tenant that agrees what its number means - so the answer is that, plus what this file does
+know: the columns, who writes the table, what it feeds. Computing it anyway would invent
+the definition this layer exists to find.
+
+**Tier.** **1** feeds a semantic model, **2** is read or written by a notebook or pipeline,
+**3** is harvested and nothing in these workspaces refers to it. Tier-3 nodes are named
+under their store or model and detailed nowhere - the absence means nothing refers to them,
+not that they are gone. A tier-3 table is a describe-only answer by definition.
+
+**What is unreliable.** Table references inside notebooks are recovered by pattern matching
+over code, so a name built from a variable is missing. Usage covers the audit window above
+only. Anything marked `unresolved` is a reference that could not be bound to a harvested
+item, and a store marked `external` was bound to but never harvested. Terms merge on their
+words, so two spellings of one idea that share no word stay apart.
+""".format(conf=n_conf)).split("\n")
+
+
+def _context_terms(w: Wiki, con) -> List[str]:
+    terms = con.execute(
+        "SELECT term_id, label, n_definitions, n_distinct_expr, n_items, conflicting, "
+        "       views, n_reports FROM terms ORDER BY views DESC, term_id").fetchall()
+    if not terms:
+        return []
+    defs: Dict[str, List[tuple]] = defaultdict(list)
+    for row in con.execute(
+            "SELECT term_id, rank, def_id, name, kind, owner_item_id, owner_item_name, "
+            "       workspace, table_name, endorsement, views, n_reports, queries, score, "
+            "       expression, description FROM definitions ORDER BY term_id, rank"
+    ).fetchall():
+        defs[row[0]].append(row)
+    aliases: Dict[str, List[str]] = defaultdict(list)
+    for term_id, alias in con.execute(
+            "SELECT DISTINCT term_id, alias FROM aliases ORDER BY 1, 2").fetchall():
+        aliases[term_id].append(alias)
+    reports: Dict[str, List[tuple]] = defaultdict(list)
+    for term_id, name, workspace, views in con.execute(
+            "SELECT d.term_id, r.name, r.workspace, max(coalesce(iv.views, 0)) "
+            "  FROM definitions d "
+            "  JOIN measure_usage mu ON mu.def_id = d.def_id "
+            "  JOIN nodes r ON r.id = 'report:' || mu.report_id "
+            "  LEFT JOIN item_views iv ON iv.item_id = mu.report_id "
+            " GROUP BY 1, 2, 3 ORDER BY 4 DESC").fetchall():
+        reports[term_id].append((name, workspace, views))
+
+    lines = ["## Terms (" + str(len(terms)) + ")", "",
+             "| term | label | definitions | conflicting | rank 1 | in | views 28d |",
+             "|------|-------|-------------|-------------|--------|----|-----------|"]
+    for term_id, label, n_defs, _nd, _ni, conflicting, views, _nr in terms:
+        top = (defs.get(term_id) or [(None,) * 16])[0]
+        lines.append("| " + _cell(term_id) + " | " + _cell(label or term_label(term_id))
+                     + " | " + str(n_defs) + " | " + ("yes" if conflicting else "")
+                     + " | " + _cell(top[3]) + " | " + _cell(top[6])
+                     + " | " + str(views) + " |")
+    lines.append("")
+
+    for term_id, label, n_defs, n_distinct, n_items, conflicting, views, n_reports in terms:
+        rows = defs.get(term_id) or []
+        if not rows:
+            continue
+        lines += ["### term: " + term_id, "",
+                  "label: " + str(label or term_label(term_id))
+                  + " | definitions: " + str(n_defs) + " across " + str(n_items) + " items"
+                  + " | conflicting: " + ("yes, " + str(n_distinct) + " distinct expressions"
+                                          if conflicting else "no, all agree")
+                  + " | views 28d: " + str(views) + " | reports: " + str(n_reports), ""]
+        if len(aliases.get(term_id, [])) > 1:
+            lines += ["also known as: " + ", ".join(aliases[term_id]), ""]
+        lines += ["| rank | measure | model | workspace | endorsement | score | views | "
+                  "reports | queries |",
+                  "|------|---------|-------|-----------|-------------|-------|-------|"
+                  "---------|---------|"]
+        for r in rows:
+            lines.append("| " + str(r[1]) + " | " + _cell(r[3]) + " | " + _cell(r[6])
+                         + " | " + _cell(r[7]) + " | " + (_cell(r[9]) if r[9] else "-")
+                         + " | " + str(round(r[13] or 0, 2)) + " | " + str(r[10] or 0)
+                         + " | " + str(r[11] or 0) + " | " + str(r[12] or 0) + " |")
+        lines.append("")
+        for r in rows:
+            lines += ["#### " + str(r[1]) + ". " + str(r[3]) + " - " + str(r[6])
+                      + " (" + str(r[5]) + ")"
+                      + (", table " + str(r[8]) if r[8] else "")
+                      + (" - defined inside a report" if r[4] == "report_measure" else ""), ""]
+            if r[15]:
+                lines += [str(r[15]).replace("\n", " "), ""]
+            lines += _fence(r[14]) + [""]
+        if reports.get(term_id):
+            lines += ["used in reports: "
+                      + ", ".join(str(n) + " (" + str(v) + " views)"
+                                  for n, _ws, v in reports[term_id][:20]), ""]
+        upstream = _upstream_of(w, con, [r[2] for r in rows])
+        if upstream:
+            lines += ["upstream: " + ", ".join(_ref(w, nid) for nid, _kind in upstream), ""]
+    return lines
+
+
+def _context_models(w: Wiki, con) -> List[str]:
+    models = sorted([(nid, n) for nid, n in w.nodes.items()
+                     if n["kind"] == "semantic_model" and not w.is_tail(nid)],
+                    key=lambda kv: (kv[1]["workspace"] or "", kv[1]["name"]))
+    empty = sorted(n["name"] for nid, n in w.nodes.items()
+                   if n["kind"] == "semantic_model" and w.is_tail(nid))
+    if not models and not empty:
+        return []
+    measures: Dict[str, List[tuple]] = defaultdict(list)
+    for row in con.execute(
+            "SELECT owner_item_id, name, table_name, term_id, rank, conflicting, "
+            "       expression, description FROM definitions WHERE kind = 'measure' "
+            " ORDER BY table_name, name").fetchall():
+        measures[row[0]].append(row)
+
+    lines = ["## Semantic models (" + str(len(models)) + ")", ""]
+    for nid, node in models:
+        lines += ["### model: " + node["name"], "",
+                  "item_id: " + _dash(node.get("item_id"))
+                  + " | workspace: " + _dash(node.get("workspace"))
+                  + " | workspace_id: " + _dash(w._workspace_id(node))
+                  + " | storage: " + _dash(Wiki._attr(node, "storage_mode"))
+                  + " | endorsement: " + _dash(node.get("endorsement"))
+                  + (" | owner: " + str(node["owner"]) if node.get("owner") else "")
+                  + (" | modified: " + str(node["modified_at"])[:10]
+                     if node.get("modified_at") else "")
+                  + " | views 28d: " + str(w.views.get(node.get("item_id"), 0)), ""]
+        if node.get("description"):
+            lines += [str(node["description"]).replace("\n", " "), ""]
+        # The two ids in the order `ask dax` takes them, so a number is one copy away.
+        lines += ["run: python -m ask dax " + _dash(w._workspace_id(node)) + "/"
+                  + _dash(node.get("item_id"))
+                  + ' "EVALUATE ROW(\\"v\\", [<measure>])"', ""]
+        lines += _context_model_tables(w, nid)
+        for row in measures.get(node.get("item_id"), []):
+            lines += ["#### measure: [" + str(row[1]) + "] on " + str(row[2]), "",
+                      "defines term `" + str(row[3]) + "`, rank " + str(row[4])
+                      + (", other definitions disagree" if row[5] else ""), ""]
+            if row[7]:
+                lines += [str(row[7]).replace("\n", " "), ""]
+            lines += _fence(row[6]) + [""]
+        used_by = [src for src, rel, _wt, _a in w.in_edges.get(nid, []) if rel == "uses"]
+        if used_by:
+            lines += ["used by: " + _refs(w, used_by), ""]
+    if empty:
+        lines += ["Empty or unreferenced models, not detailed (" + str(len(empty)) + "): "
+                  + ", ".join("`" + n + "`" for n in empty[:60]), ""]
+    return lines
+
+
+def _context_model_tables(w: Wiki, nid: str) -> List[str]:
+    tables = [(dst, w.nodes[dst]) for dst, rel, _wt, _a in w.out_edges.get(nid, [])
+              if rel == "contains" and dst in w.nodes and w.nodes[dst]["kind"] == "model_table"]
+    lines: List[str] = []
+    rels: List[str] = []
+    for tid, table in sorted(tables, key=lambda t: t[1]["name"]):
+        sources = [dst for dst, rel, _wt, _a in w.out_edges.get(tid, [])
+                   if rel == "sources_from"]
+        n_rows = Wiki._attr(table, "n_rows")
+        lines += ["#### table: " + table["name"]
+                  + " (" + str(Wiki._attr(table, "mode", "?"))
+                  + (", " + format(int(n_rows), ",") + " rows" if n_rows is not None else "")
+                  + ")" + (" <- " + _refs(w, sources) if sources else ""), ""]
+        if table.get("description"):
+            lines += [str(table["description"]).replace("\n", " "), ""]
+        for cid, _rel, _wt, _a in [(d, r, x, a) for d, r, x, a in w.out_edges.get(tid, [])
+                                   if r == "contains"][:MAX_COLUMNS]:
+            col = w.nodes.get(cid)
+            if not col or col["kind"] != "column":
+                continue
+            profile = Wiki._attr(col, "profile") or {}
+            values = [str(v) for v in (profile.get("values") or [])][:MAX_VALUES]
+            detail = ""
+            if values:
+                detail = " | values: " + ", ".join(values) + (
+                    " ..." if len(profile.get("values") or []) > MAX_VALUES else "")
+            elif profile.get("min") is not None or profile.get("max") is not None:
+                detail = (" | range " + str(profile.get("min"))[:24] + " .. "
+                          + str(profile.get("max"))[:24])
+            if profile.get("n_distinct") is not None:
+                detail += " | distinct: " + str(profile["n_distinct"])
+            lines.append("- " + col["name"] + ": "
+                         + str(Wiki._attr(col, "data_type", "?")) + detail)
+        lines.append("")
+        for dst, rel, _wt, attrs in w.out_edges.get(tid, []):
+            if rel == "relates_to" and dst in w.nodes:
+                rels.append(table["name"] + "[" + str(_eattr(attrs, "from_column", "?"))
+                            + "] -> " + w.nodes[dst]["name"] + "["
+                            + str(_eattr(attrs, "to_column", "?")) + "]")
+    if rels:
+        lines += ["relationships: " + "; ".join(sorted(rels)), ""]
+    return lines
+
+
+def _context_reports(w: Wiki) -> List[str]:
+    items = sorted([(nid, n) for nid, n in w.nodes.items()
+                    if n["kind"] in ("report", "dashboard") and not w.is_tail(nid)],
+                   key=lambda kv: (kv[1]["kind"], kv[1]["workspace"] or "", kv[1]["name"]))
+    if not items:
+        return []
+    lines = ["## Reports and dashboards (" + str(len(items)) + ")", ""]
+    for nid, node in items:
+        out = w.out_edges.get(nid, [])
+        lines += ["### " + node["kind"] + ": " + node["name"], "",
+                  "item_id: " + _dash(node.get("item_id"))
+                  + " | workspace: " + _dash(node.get("workspace"))
+                  + " | views 28d: " + str(w.views.get(node.get("item_id"), 0)), ""]
+        model = [dst for dst, rel, _wt, _a in out if rel == "uses"]
+        if model:
+            lines += ["reads: " + _refs(w, model), ""]
+        pages = [(dst, w.nodes[dst]) for dst, rel, _wt, _a in out
+                 if rel == "contains" and dst in w.nodes and w.nodes[dst]["kind"] == "page"]
+        if pages:
+            lines += ["pages: " + ", ".join(
+                p["name"] + " (" + str(Wiki._attr(p, "n_visuals", 0)) + " visuals)"
+                for _pid, p in sorted(pages, key=lambda x: x[1]["name"])), ""]
+        fields: Dict[str, int] = {}
+        for pid, _p in pages:
+            for vid, rel, _wt, _a in w.out_edges.get(pid, []):
+                if rel != "contains":
+                    continue
+                for dst, vrel, weight, _at in w.out_edges.get(vid, []):
+                    if vrel == "references":
+                        fields[dst] = fields.get(dst, 0) + int(weight or 1)
+        if fields:
+            top = sorted(fields.items(), key=lambda kv: -kv[1])[:MAX_FIELDS]
+            lines += ["fields used: " + ", ".join(_ref(w, f) + " (" + str(c) + ")"
+                                                  for f, c in top), ""]
+        for mid in [dst for dst, rel, _wt, _a in out
+                    if rel == "contains" and dst in w.nodes
+                    and w.nodes[dst]["kind"] == "report_measure"]:
+            lines += ["#### report measure: [" + w.nodes[mid]["name"] + "]", ""]
+            lines += _fence(Wiki._attr(w.nodes[mid], "expression", "")) + [""]
+    return lines
+
+
+def _context_flows(w: Wiki) -> List[str]:
+    kinds = ("notebook", "pipeline", "dataflow")
+    items = sorted([(nid, n) for nid, n in w.nodes.items()
+                    if n["kind"] in kinds and not w.is_tail(nid)],
+                   key=lambda kv: (kv[1]["kind"], kv[1]["workspace"] or "", kv[1]["name"]))
+    if not items:
+        return []
+    lines = ["## Notebooks, pipelines and dataflows (" + str(len(items)) + ")", ""]
+    for nid, node in items:
+        out = w.out_edges.get(nid, [])
+        lines += ["### " + node["kind"] + ": " + node["name"], "",
+                  "item_id: " + _dash(node.get("item_id"))
+                  + " | workspace: " + _dash(node.get("workspace"))
+                  + (" | default lakehouse: " + str(Wiki._attr(node, "default_lakehouse"))
+                     if Wiki._attr(node, "default_lakehouse") else "")
+                  + (" | " + str(Wiki._attr(node, "n_activities", 0)) + " activities: "
+                     + ", ".join(Wiki._attr(node, "activity_types", []) or ["-"])
+                     if node["kind"] == "pipeline" else ""), ""]
+        for title, rels in (("writes", ("feeds",)), ("reads", ("reads", "sources_from")),
+                            ("runs", ("runs",)), ("refreshes", ("refreshes",)),
+                            ("uses", ("uses",)), ("mentions", ("mentions",))):
+            rows = [d for d, rel, _wt, _a in out if rel in rels]
+            if rows:
+                lines.append("- " + title + ": " + _refs(w, rows))
+        runners = [s for s, rel, _wt, _a in w.in_edges.get(nid, [])
+                   if rel in ("runs", "uses")]
+        if runners:
+            lines.append("- run by: " + _refs(w, runners))
+        lines.append("")
+        if node["kind"] == "notebook":
+            lines += ["> Table references in notebooks are recovered by pattern matching "
+                      "over the code; a name built from a variable is not visible here.", ""]
+    return lines
+
+
+def _context_stores(w: Wiki) -> List[str]:
+    stores = sorted([(nid, n) for nid, n in w.nodes.items()
+                     if n["kind"] in ("lakehouse", "warehouse")],
+                    key=lambda kv: (kv[1]["workspace"] or "", kv[1]["name"]))
+    if not stores:
+        return []
+    lines = ["## Stores (" + str(len(stores)) + ")", ""]
+    for nid, node in stores:
+        tables = [dst for dst, rel, _wt, _a in w.out_edges.get(nid, []) if rel == "contains"]
+        used = sorted([t for t in tables if not w.is_tail(t)],
+                      key=lambda t: w.nodes.get(t, {}).get("name", ""))
+        tail = sorted([t for t in tables if w.is_tail(t)],
+                      key=lambda t: w.nodes.get(t, {}).get("name", ""))
+        lines += ["### store: " + node["name"] + " (" + node["kind"] + ")", "",
+                  "item_id: " + _dash(node.get("item_id"))
+                  + " | workspace: " + _dash(node.get("workspace"))
+                  + " | workspace_id: " + _dash(w._workspace_id(node))
+                  + " | tables: " + str(len(tables)) + " (" + str(len(used))
+                  + " referenced)", ""]
+        if Wiki._attr(node, "external"):
+            lines += ["This store was not harvested: something in a harvested workspace "
+                      "binds to it (" + str(Wiki._attr(node, "via", "reference"))
+                      + "), so only the tables bound to are known.", ""]
+        for tid in used:
+            lines += _context_store_table(w, tid)
+        if tail:
+            lines += ["not referenced (" + str(len(tail)) + "), harvested but no model, "
+                      "notebook or pipeline in these workspaces reads or writes them: "
+                      + ", ".join("`" + str(w.nodes.get(t, {}).get("name", t)) + "`"
+                                  for t in tail), ""]
+    return lines
+
+
+def _context_store_table(w: Wiki, nid: str) -> List[str]:
+    node = w.nodes.get(nid)
+    if not node:
+        return []
+    n_rows = Wiki._attr(node, "n_rows")
+    lines = ["#### table: " + _ref(w, nid)
+             + " (tier " + str(node.get("tier") or 1)
+             + (", " + format(int(n_rows), ",") + " rows" if n_rows is not None else "")
+             + (", profiled " + str(Wiki._attr(node, "profiled_at"))[:10]
+                if Wiki._attr(node, "profiled_at") else "") + ")", ""]
+    for title, rels in (("written by", ("feeds",)), ("read by", ("reads",)),
+                        ("used by models", ("sources_from",))):
+        rows = [src for src, rel, _wt, _a in w.in_edges.get(nid, []) if rel in rels]
+        if rows:
+            lines.append("- " + title + ": " + _refs(w, rows))
+    lines.append("")
+    cols = Wiki._attr(node, "columns") or []
+    if not cols:
+        return lines
+    stats = Wiki._attr(node, "stats") or {}
+    values = Wiki._attr(node, "values") or {}
+    ndv = Wiki._attr(node, "n_distinct") or {}
+    lines += ["| column | type | distinct | min | max | values |",
+              "|--------|------|----------|-----|-----|--------|"]
+    for c in cols[:MAX_COLUMNS]:
+        name = str(c.get("name"))
+        st = stats.get(name) or {}
+        vals = [_cell(v, 40) for v in (values.get(name) or [])]
+        lines.append("| " + _cell(name) + " | " + _cell(c.get("type", "")) + " | "
+                     + str(ndv.get(name, "")) + " | " + _cell(st.get("min", ""), 24)
+                     + " | " + _cell(st.get("max", ""), 24) + " | "
+                     + ", ".join(vals[:MAX_VALUES])
+                     + (" ..." if len(vals) > MAX_VALUES else "") + " |")
+    lines.append("")
+    return lines
 
 
 def check_links(out_dir: str) -> List[Tuple[str, str]]:

@@ -1,8 +1,8 @@
 """Bearer tokens, one function per audience.
 
-Five audiences are in play and they are genuinely different: OneLake storage, the Fabric
-control plane, the Power BI REST API, an Eventhouse cluster, and the SQL endpoint. A token
-for one 401s on another, so nothing here is interchangeable.
+Four audiences are in play and they are genuinely different: OneLake storage, the Fabric
+control plane, the Power BI REST API, and an Eventhouse cluster. A token for one 401s on
+another, so nothing here is interchangeable.
 
 Acquisition order, cheapest first:
 
@@ -29,11 +29,10 @@ from typing import Callable, Dict, Optional
 STORAGE_SCOPE = "https://storage.azure.com/.default"
 FABRIC_SCOPE = "https://api.fabric.microsoft.com/.default"
 POWERBI_SCOPE = "https://analysis.windows.net/powerbi/api/.default"
-SQL_SCOPE = "https://database.windows.net/.default"
 
 # Env vars honoured per scope, so a CI run can inject a token instead of signing in.
 _ENV = {STORAGE_SCOPE: "AZURE_STORAGE_TOKEN", FABRIC_SCOPE: "FABRIC_TOKEN",
-        POWERBI_SCOPE: "POWERBI_TOKEN", SQL_SCOPE: "SQL_TOKEN"}
+        POWERBI_SCOPE: "POWERBI_TOKEN"}
 
 _CACHE: Dict[tuple, str] = {}
 _LOCK = threading.RLock()
@@ -147,11 +146,6 @@ def fabric_token() -> str:
 def powerbi_token() -> str:
     """The Power BI REST API - the scanner and the audit log."""
     return _token(POWERBI_SCOPE, "pbi", "the Power BI API")
-
-
-def sql_token() -> str:
-    """A SQL analytics endpoint, over TDS."""
-    return _token(SQL_SCOPE, "pbi", "the SQL endpoint")
 
 
 def kusto_token(cluster_uri: str) -> str:

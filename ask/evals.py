@@ -22,7 +22,7 @@ import sys
 import time
 from typing import Any, Dict, List, Optional
 
-from . import context as ctx
+from . import db as ctx        # the benchmark builds its questions out of the graph
 from . import fabric
 
 HERE = os.path.dirname(os.path.abspath(__file__))

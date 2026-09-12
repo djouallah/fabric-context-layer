@@ -1,5 +1,5 @@
-"""The harvest's working files - `raw/`, `build/`, `wiki/`, `graph.html` - kept in the
-lakehouse's Files section rather than on whatever machine ran it.
+"""The harvest's working files - `raw/`, `build/`, `wiki/`, `context.md`, `graph.html` -
+kept in the lakehouse's Files section rather than on whatever machine ran it.
 
 `raw/` is the load-bearing one. It is the previous harvest, and pulling it back down is what
 makes the next run incremental: a definition refetches only when its `lastUpdatedDate` has
@@ -16,7 +16,7 @@ import os
 from typing import Dict, Iterable, List, Tuple
 
 # What lives under Files/, and where it comes from in the working folder.
-ITEMS = ("raw", "build", "wiki", "graph.html")
+ITEMS = ("raw", "build", "wiki", "context.md", "graph.html")
 MANIFEST = ".pushed.json"
 
 

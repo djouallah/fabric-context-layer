@@ -1,6 +1,6 @@
 # Running fabric-context-layer
 
-The operational side. The [README](README.md) has the idea.
+The operational side. The [README](../README.md) has the idea.
 
 The harvest is a pip package, `fabcontext`. It runs inside a Fabric notebook, reads the
 tenant, and leaves a lakehouse behind. The URL it returns is the only thing that crosses the
@@ -82,7 +82,7 @@ The knobs, all optional:
 | `refresh=True` | refetch everything rather than only what changed |
 | `profile=False` | skip lakehouse columns, stats and values |
 | `values=False` | profile from the Delta log only, without the distinct-value scan |
-| `wiki=False` | skip the markdown wiki and `graph.html` |
+| `wiki=False` | skip the markdown wiki, `context.md` and `graph.html` |
 | `aliases={"revenue": ["Net Sales"]}` | merges the word lists cannot make |
 | `folder="context"` | workspace folder to put the lakehouse in |
 
@@ -117,57 +117,50 @@ SELECT name, owner_item_name, rank, expression
 ## Ask it
 
 `--db` is the URL `harvest()` returned; it identifies the lakehouse and is the only thing the
-two halves share.
+two halves share. The client is two commands:
 
 ```powershell
-python -m ask --db <url> contract             # what the lakehouse publishes, and what is missing
-python -m ask scope
-python -m ask search "average price"
-python -m ask define "average price"          # ranked, with the DAX and the conflict flag
-python -m ask model <model> --table <table>   # schema pack, with filter values where profiled
-python -m ask values <model> <table> <column> # distinct values and range, harvested or live
-python -m ask table <store.schema.table>      # columns and profile, who writes and reads it
-python -m ask dax <model> "EVALUATE ROW(\"v\", [<measure>])"
-python -m ask lineage "<measure>"
-python -m ask usage "<term>"
-python -m ask sql "select ... from terms"     # DuckDB SQL over the context tables
+python -m ask --db <url> context              # fetch Files/context.md, the whole graph as one file
+python -m ask dax <ws-guid>/<model-guid> "EVALUATE ROW(\"v\", [<measure>])"
 ```
 
-`--json`, `--db`, `--refresh` and `--no-cache` are global flags and go before the
-subcommand (the rest of the examples above omit `--db` only for brevity).
+`context.md` is the metadata: every term with its ranked definitions and their DAX, every
+model with the two ids a query executes against, column values, lineage, reports, and the
+long tail named under its store. An agent reads it. One round trip fetches it, it opens no
+Delta table, and the copy lands in `%LOCALAPPDATA%abric-context`; `--refresh` re-fetches.
 
-`sql` also reads the data itself when the query qualifies a table with a harvested store
-(`select ... from coffee.benchmark_tests.contoso_sales`): the store attaches read-only over
-its SQL analytics endpoint through DuckDB's `mssql` community extension, so context and
-data join in one statement. It is the fallback for tables no semantic model covers; a
-measure's number still comes from DAX. The dialect is DuckDB, not T-SQL.
+`dax` is the only other call and the only source of a number. It takes the ids straight from
+the file - every model section prints a `run:` line to copy - so running a number looks
+nothing up. `--json` and `--db` are global flags and go before the subcommand.
 
-Opening Delta tables over OneLake pays a round trip per file, so both sides download a
-copy of the current publish to `%LOCALAPPDATA%\fabric-context`, named after the publish
-that produced it. The first command after a build pays the pull; the rest take
-milliseconds, and a new publish makes a new name rather than a stale copy. `--refresh`
-re-pulls, `--no-cache` keeps none.
+**There is no SQL here.** A number comes from DAX calling a ranked measure by name, or it
+does not come. A table no semantic model covers has nothing in the tenant that agrees what
+its number means, so the honest answer is to say that and describe what is known, not to
+compute one and imply a definition nobody wrote. That is also why the client needs no
+database driver at all: no duckdb, no deltalake, no DuckDB extension, no pull.
 
-Any agent that can run a command line can drive it. The repo ships the protocol as a
-Claude Code skill (`.claude/skills/fabric-context/SKILL.md`); another agent needs only the
-same steps - search, define, model, values, dax - and to cite the ranked definition it
-used. `wiki/` still opens in Obsidian; its `CLAUDE.md` explains both routes.
+Any agent that can run a command line can drive it. The repo ships the protocol as a Claude
+Code skill (`.claude/skills/fabric-context/SKILL.md`); another agent needs only the same
+steps - read the file, take rank 1, call it by name, cite it. `wiki/` still opens in
+Obsidian, and holds the same content as linked pages.
 
 How a question flows:
 
-1. `search` finds the term, by any of its spellings (`aliases`).
-2. `define` returns every definition ranked, with the four signals, the DAX, and the
-   dataset id to execute against. A conflicting term is reported as such.
-3. `model` returns the tables, columns, relationships and source tables of the owning
-   model; profiled columns carry their distinct values and ranges, so "NSW" becomes
-   `'<table>'[<column>] = "NSW"` from the data, not from memory. `values` fetches them
-   live when the harvest has not profiled the column.
+1. `context` fetches the file; its `## Terms` index and `### term:` sections find the term
+   by any of its spellings.
+2. The ranked table under that term gives every definition with the four signals, the DAX,
+   and the model that owns it. A conflicting term says so.
+3. The model's section gives the tables, columns, relationships and source tables; profiled
+   columns carry their distinct values and ranges, so "NSW" becomes
+   `'<table>'[<column>] = "NSW"` from the data, not from memory.
 4. `dax` runs a query that calls the ranked measure by name through the Power BI
    executeQueries API, so the governed logic runs rather than a re-derivation of it.
 5. The answer cites the measure, model, rank, score, conflict note and the query that ran.
 
 `python -m ask evals generate` derives a benchmark from the graph (definition, conflict,
-lineage, usage and data questions for the top terms, plus one out-of-scope question);
+lineage, usage and data questions for the top terms, plus one out-of-scope question). It is
+a maintainer tool and the one thing that still opens the published tables, through
+`ask/db.py`;
 `python -m ask evals run` runs it through Claude Code headless with and without the
 context layer and reports accuracy per class. Nothing in it names a tenant.
 
@@ -246,23 +239,31 @@ a view), `query_usage`, `query_stats`, `meta`, and the views `flow` and `measure
 | 2 | reachable | a table a notebook or pipeline reads or writes, but no model is built on |
 | 3 | inventory | harvested, and nothing in the harvested workspaces refers to it |
 
+Below tier 3 there is one thing that is not kept at all. Fabric creates a semantic model
+beside every lakehouse by itself; it carries whatever tables got synced into it and defines
+no measure, so it can answer nothing. Worse, its tables `sources_from` the lakehouse tables
+underneath, and that edge is what marks a table tier 1 - one auto-synced default model
+promotes a whole sandbox lakehouse to load-bearing and the tier stops meaning anything. So
+`graph.py` deletes them outright, with their tables, columns, edges and monitoring rows,
+before anything is derived. The exception is one a report or a pipeline actually points at:
+a person built on that, so it stays, demoted to tier 3, rather than breaking their lineage.
+
 Tier 3 is most of a real tenant: on the three workspaces here it is 685 of 750 lakehouse
-tables, the 18 empty semantic models Fabric auto-creates beside a lakehouse, and every SQL
-endpoint. The harvest still collects all of it - a lakehouse table list is one call per
-store, and `ask sql` answers from tables no model covers - but the renderers hold it back:
+tables and every SQL endpoint. The harvest still collects all of it - a lakehouse table list is one call per
+store, and an inventory that stops at what a model happens to use cannot say what is
+unused, where a table came from, or that a name exists at all - but the renderers hold it
+back:
 
 - **the wiki** gives it no page of its own. It is named on its store's page under
   *Not referenced*, and on its workspace page. This is what takes the wiki from 931 item
   pages to 228.
+- **`context.md`** details tier 1 and 2 and names tier 3 in one list under its store, with
+  no columns and no section of its own.
 - **`graph.html`** counts it and hides it behind the *Unreferenced* toggle.
-- **`ask scope`** leaves empty models out of the model list, says how many it left out,
-  and reports `n_used` beside `n_tables` for each store.
-- **`ask search`** still finds it. The tier breaks ties; it never moves the score, so the
-  thresholds a caller checks mean what they did before.
-
-Nothing is dropped, and `ask table`, `ask sql` and `ask lineage` treat every tier alike.
-A publish from before `schema_version` 4 has no `tier` column; the query side detects that
-and reads everything as tier 1, which is what it meant before the column existed.
+Nothing is dropped: every tier is in `Tables/`, and a tier-3 table is still named, still
+attributed to its store, still walkable in lineage. What it does not have is a number. No
+semantic model covers it, so nothing in the tenant agrees what its number would mean, and
+the client will say that rather than compute one.
 
 ## Status
 
@@ -309,12 +310,13 @@ on a report-free workspace definitions are ordered on authority, model usage and
 | `fabcontext/publish.py` | the context into a lakehouse, as Delta |
 | `fabcontext/files.py` | the working files <-> the lakehouse `Files/` section, as a diff |
 | `fabcontext/schema.sql`, `fabcontext/graph.py` | the database, the terms, the ranking, the lineage walk, the read-back |
-| `fabcontext/wiki.py` | the markdown projection |
+| `fabcontext/wiki.py` | the markdown projection: `wiki/` as linked pages, `context.md` as one file |
 | `fabcontext/viz.py`, `fabcontext/graph_template.html` | the standalone `graph.html` |
 | `tests/` | the whole pipeline on a synthetic tenant |
 | `docs/fabric-runtime.txt` | what the Fabric Python 3.12 runtime ships; the dependency list rests on it |
-| `ask/context.py` | opening the published tables, and read-only queries over them |
-| `ask/fabric.py` | live DAX, live column values, and the store attachment for `sql` |
+| `ask/context.py` | the client: find the lakehouse, fetch `context.md`. No database driver |
+| `ask/fabric.py` | the only network call that returns a number: DAX on a model |
+| `ask/db.py` | the published tables in DuckDB - read by the benchmark, and by nothing else |
 | `ask/__main__.py` | `python -m ask` |
 | `ask/evals.py` | the generated benchmark and its runner |
 | `.claude/skills/fabric-context/SKILL.md` | how Claude Code uses `python -m ask` |

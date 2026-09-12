@@ -27,9 +27,19 @@ calling each other.
 
 **[See it on a real tenant](https://djouallah.github.io/fabric-context-layer/)**
 
-![Inside the platform, the harvest side reads a Fabric workspace, builds and ranks the graph, and publishes it as the context. Outside it, any stateless agent - on a laptop, in a notebook, in CI, in a chat - searches and defines a term from that context, runs rank 1 as DAX on the model that owns it, and answers with the number, its source and a confidence.](docs/how-it-works-dark.svg)
+![Inside the platform, the harvest side reads a Fabric workspace, builds and ranks the graph, and publishes it as the context. Outside it, any stateless agent - on a laptop, in a notebook, in CI, in a chat - reads that context as one markdown file, runs rank 1 as DAX on the model that owns it, and answers with the number, its source and a confidence.](docs/how-it-works-dark.svg)
 
-Installing it, the ranking, what is harvested, the schema, the limits: **[run.md](run.md)**.
+
+```python
+!pip install fabcontext
+import fabcontext
+url = fabcontext.harvest("Workspace_A")
+```
+
+The first call creates the lakehouse; every later one updates it. It returns the URL an
+agent asks against.
+
+The ranking, what is harvested, the schema, how to ask, the limits: **[docs/guide.md](docs/guide.md)**.
 
 ## Licence
 

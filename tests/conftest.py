@@ -36,9 +36,22 @@ def con(built):
 
 
 @pytest.fixture(scope="session")
-def wiki_dir(con, tmp_path_factory):
+def rendered(con, tmp_path_factory):
+    """(wiki folder, context.md path) from one render, the way build_and_publish calls it -
+    the file sits beside the folder, which is rebuilt from scratch each run."""
     from fabcontext import wiki
 
-    out = str(tmp_path_factory.mktemp("wiki"))
-    wiki.render(con, out)
-    return out
+    base = tmp_path_factory.mktemp("render")
+    out, md = str(base / "wiki"), str(base / "context.md")
+    wiki.render(con, out, md)
+    return out, md
+
+
+@pytest.fixture(scope="session")
+def wiki_dir(rendered):
+    return rendered[0]
+
+
+@pytest.fixture(scope="session")
+def context_md(rendered):
+    return open(rendered[1], encoding="utf-8", newline="").read()
