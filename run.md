@@ -38,14 +38,32 @@ Two lines in a Fabric notebook:
 ```
 
 ```python
-from fabcontext import harvest
-url = harvest("My Workspace")
+import fabcontext
+url = fabcontext.harvest("My Workspace")
 ```
 
 That is the whole interface. The first call creates a lakehouse called `context_layer` in
-that workspace; every later call updates it. `harvest(["A", "B"], to="Shared/context")`
-harvests several workspaces into a lakehouse of your choosing. It returns the lakehouse's
-Tables root, which is what the query side takes as `--db`.
+that workspace; every later call updates it. It returns the lakehouse's Tables root, which is
+what the query side takes as `--db`.
+
+Several workspaces go in one call, as a list of names or GUIDs, with `to` saying where the
+context lands (otherwise it is the first workspace named):
+
+```python
+url = fabcontext.harvest(["sqlengines", "Sales", "Finance"], to="sqlengines/context_layer")
+```
+
+Name them together rather than calling `harvest` once each. The Scanner API takes up to a
+hundred workspaces per call and is the only source of endorsement and cross-workspace
+lineage, so a model in Sales reading a lakehouse in Finance resolves to a real node only when
+both are in the same scan; harvested separately, that edge is an `external` stub instead.
+
+A lakehouse accumulates. A run pulls the previous `Files/raw` down and the parse reads every
+workspace folder it finds there, so harvesting A and later B into the same lakehouse gives a
+context holding both. That is usually what you want - but `scanner.json` is cached for
+`stale_after_days` and covers only the workspace set of the run that fetched it, so pass
+`refresh=True` the once when you add a workspace, and let the incremental behaviour resume
+afterwards.
 
 **The install replaces nothing and needs no kernel restart.** `fabcontext` declares five
 dependencies and the Fabric Python 3.12 runtime already has all five at or above the

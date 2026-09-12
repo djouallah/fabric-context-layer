@@ -5,7 +5,7 @@ Two sides, one artifact, and the artifact is a Fabric lakehouse:
 - `fabcontext/` is the **harvest side**, and it is a pip package (`pip install fabcontext`).
   It reads Fabric into `raw/`, builds the graph in memory, ranks competing definitions, and
   publishes the result into a lakehouse of its own - then renders `wiki/` and `graph.html`
-  from it. One call: `from fabcontext import harvest; url = harvest("My Workspace")`, or
+  from it. One call: `import fabcontext; url = fabcontext.harvest("My Workspace")`, or
   `python -m fabcontext "My Workspace"`.
 - `ask/` is the **query side**: it opens that lakehouse read-only and answers questions,
   running DAX against a semantic model when a question needs a number. Run with

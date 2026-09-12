@@ -1,8 +1,9 @@
 """One call: name a workspace, get back a lakehouse holding the ranked context of it.
 
     %pip install fabcontext
-    from fabcontext import harvest
-    url = harvest("My Workspace")
+    import fabcontext
+    url = fabcontext.harvest("My Workspace")
+    url = fabcontext.harvest(["Sales", "Finance"], to="Sales/context_layer")
 
 The first call creates the lakehouse; every later call updates it. Nothing else to configure
 and nothing kept on the machine that ran it - the lakehouse is the only state, and the URL it
