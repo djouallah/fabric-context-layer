@@ -101,7 +101,37 @@ theirs.
 
 Never present the list and ask the user to choose. That is a non-answer.
 
-## Step 3 - run the number
+## Step 3 - get the real column names
+
+Skip this when the question needs no filter and no breakdown: `EVALUATE ROW("v", [<measure>])`
+names no column, so there is nothing to look up.
+
+Otherwise, ask the **owning** model what it contains - the rank-1 row's `workspace_id` and
+`model_id`, the same ids you are about to run the number on:
+
+```dax
+EVALUATE INFO.VIEW.COLUMNS()
+```
+
+One row per column in the model. **Read the table and column names out of the response's own
+headers** rather than assuming what those headers are called, then pick the pair that matches
+what the user asked to filter or group by and use it verbatim. If the model is large enough
+that the response is unwieldy, re-run it filtered, using the header names you just learned.
+
+If that query errors, fall back to:
+
+```dax
+EVALUATE COLUMNSTATISTICS()
+```
+
+which names the table and column directly and carries min/max as well - but it scans the
+model, so it is the second choice, not the first.
+
+**Never take a table or column name from the measure's `expression` text.** The expression
+names what the measure reads, not what you may filter or group by, and the two are routinely
+different. A column inferred from DAX you read is a guess, and this is the guess that fails.
+
+## Step 4 - run the number
 
 Use the rank-1 row's `workspace_id` and `model_id` in the URL - **not the context model's
 ids** - and call the measure by name:
@@ -137,8 +167,10 @@ Rules for this query:
   A wrong literal returns a plausible wrong number with no error, which is the worst failure
   available here.
 - On an error, fix the query and retry at most twice, then report the error text verbatim.
+  A rejected table or column name is not one of those errors: it means step 3 was skipped, or
+  its answer was overridden by a guess. Run the discovery query and try again.
 
-## Step 4 - answer
+## Step 5 - answer
 
 Three blocks, in this order. Nothing from a later block may appear in an earlier one.
 
@@ -177,13 +209,14 @@ Never withhold the number in order to discuss definitions.
 ## What this cannot answer
 
 `context_model` carries three tables - `terms`, `definitions` and `aliases` - and that is the
-ranking, not the whole graph. Lineage (*what feeds X*), which reports use a measure, what
-columns a table has, and profiled column values are **not reachable here**. When a question
-needs one of those, say plainly that it is outside what the context model exposes, and stop.
-Do not substitute a guess, and do not go looking for another source.
+ranking, not the whole graph. Lineage (*what feeds X*), which reports use a measure, and how
+often one is queried are **not reachable here**. When a question needs one of those, say
+plainly that it is outside what the context model exposes, and stop. Do not substitute a
+guess, and do not go looking for another source.
 
-The one exception is a filter literal, which comes from `VALUES()` on the owning model - see
-step 3.
+A model's own structure is the exception, and it does not come from `context_model` at all: the
+columns come from the owning model in step 3, and a filter literal from `VALUES()` on that same
+model in step 4. Both are questions a model can answer about itself.
 
 ## Never
 
@@ -192,6 +225,8 @@ step 3.
   text. Run it.
 - Never use the context model to compute a business number. It holds metadata only.
 - Never guess a workspace or model GUID. Both come from step 1.
+- Never ask the user for a table or column name before running step 3. The model knows its own
+  columns; asking the person who asked you is a non-answer.
 - Never re-derive a number a measure already defines. A measure exists -> call it by name.
 - Never compute a number for something no measure covers. Say so instead.
 - Never refuse to pick between definitions. The ranking is the layer's job; hand back rank 1,
