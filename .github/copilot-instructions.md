@@ -17,20 +17,11 @@ from memory.
 
 - Never answer such a question from memory, from `Files/raw`, or by adding SQL. A number
   comes from `python -m ask dax` calling a ranked measure by name, or it does not come.
-- If you cannot run commands in this mode, say the question needs agent mode and stop.
-
-## Before the first `python -m ask`
-
-- Python 3.12, and run from the repo root: `ask/` is not an installed package
-  (`pyproject.toml` ships `fabcontext*` only).
-- `pip install -e .` once. `ask` imports `fabcontext._fabric` lazily, so without it the first
-  call fails, not the import.
-- `az login`, which is where the Power BI token comes from. With no login available (the
-  cloud agent, CI), say so and stop; do not set up credentials or a device-code flow.
-- `--db` is global and goes before the subcommand. When `context.json` is missing at the repo
-  root (it is gitignored), `context` exits 2 with "nothing published yet": ask the user for
-  the `abfss://` URL `fabcontext.harvest()` returned, or `<ws-guid>/<lakehouse-guid>`. Do not
-  search the filesystem for it, and never run `python -m fabcontext` to make one.
+- The skill's "Where it runs" says what the commands need - Python 3.12, the root of this
+  clone, `pip install -e .`, `az login`, `--db` - and when to stop instead. Two things it
+  cannot know about this surface:
+  - In ask mode you cannot run commands: say the question needs agent mode and stop.
+  - The cloud agent has no `az login`: say so and stop; do not set up credentials.
 
 `copilot/` and `docs/copilot.md` are for Microsoft 365 Copilot - a Copilot Studio agent over
 the Power BI connector. They are not instructions for you; do not paste or follow them here.

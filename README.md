@@ -43,8 +43,8 @@ The ranking, what is harvested, the schema, how to ask, the limits: **[docs/guid
 ## Agent
 
 The agent can be anything - GitHub Copilot, Claude, whatever. It only needs two things: a way
-to read the context, and a way to run DAX queries. GitHub Copilot needs only Python
-installed: open the repo and it picks the skill up.
+to read the context, and a way to run DAX queries. GitHub Copilot and Microsoft Scout need
+only Python installed; the guide says where each finds the skill.
 
 I am experimenting with Microsoft 365 Copilot, because its Power BI connector is native and
 there is nothing to install: **[docs/copilot.md](docs/copilot.md)**.

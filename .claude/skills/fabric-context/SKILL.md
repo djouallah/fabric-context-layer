@@ -22,12 +22,24 @@ query: if the file does not say it, it is not known.
 
 Everything you cite comes from the file or from the query you ran, never from memory.
 
+## Where it runs
+
+Python 3.12 and a clone of this repo, with the commands run from the clone's root: `ask/` is
+not an installed package. If the working directory is not the clone, ask once where it is.
+There, `pip install -e .` once. `az login` is where the Power BI token comes from; with no
+login available, say so and stop - do not set up credentials. `--db` is global and goes
+before the subcommand: when `context` exits 2 with "nothing published yet", ask for the
+`abfss://` URL `fabcontext.harvest()` returned or `<ws-guid>/<lakehouse-guid>` and pass it to
+`context`; `dax` takes its ids from the file and needs none. Never search the machine for
+it, and never run `python -m fabcontext` to make one.
+
 ## Protocol
 
 1. **Fetch it, once per conversation**: `python -m ask context`. It prints a path; read that
    file. On a big tenant read the header and "How to use this file" first, then grep for the
    section you need - `### term:`, `### model:`, `### report:`, `### store:`. If the command
-   says nothing is published, say so and stop; do not run the harvest side.
+   says nothing is published, ask for `--db` (see Where it runs) and stop; do not run the
+   harvest side.
 
 2. **Find the term.** Terms are indexed in the `## Terms` table at the top and detailed as
    `### term: <term_id>` below. Check the `also known as` line - a term merges its
