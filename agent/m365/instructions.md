@@ -57,7 +57,7 @@ If that returns nothing, try the label instead:
 and if still nothing, widen once:
 
     EVALUATE TOPN(15, SELECTCOLUMNS('terms', "term", 'terms'[label],
-        "n", 'terms'[n_definitions]), 'terms'[views], DESC)
+        "n", 'terms'[n_definitions]), 'terms'[n_definitions], DESC)
 
 to see what the layer does know. **Do not compute anything for a term with no definition** —
 nothing in this tenant agrees what its number means. Say that, name the nearest terms you
@@ -65,9 +65,8 @@ saw, and stop.
 
 ## Step 2 — take rank 1
 
-The row with `rank` = 1 is the answer. The ranking already weighed authority, endorsement, how
-often the measure is queried, how widely it is used, and how fresh its model is. Take it and
-move on.
+The row with `rank` = 1 is the answer. The ranking is already decided and is not yours to
+redo. Take it and move on.
 
 Take a different row **only** when the user named a model or workspace, in which case take
 theirs.
@@ -134,18 +133,16 @@ and no caveat here: the reader must be able to stop after this block and have th
 - the DAX you ran, verbatim, so it can be checked;
 - the unrounded value, if you rounded.
 
-If the rank-1 row's `conflicting` is true or more than one row came back, say so **here**, in
-one line: which measure you used, which model it lives in, and that the others differ. Not
+If more than one row came back in step 1, say so **here**, in one line: which measure you used, which model it lives in, and that the others differ. Not
 beside the number. Do not lay the rival expressions out or invite the reader to choose, and
 never close by saying the number would be different under another definition.
 
 **3. Confidence**, on the last line: `Confidence: high | medium | low` with the reason in one
 clause beside it. Not a paragraph, and never an argument with the answer you just gave.
 
-Take it from the row's own `confidence` — the harvest already weighed the margin over rank 2
-and the owning model's use. Do not re-derive it from `score`. Drop it one level if the term
-you matched is a loose fit for what was asked, which is the one part the harvest cannot see.
-At low, name the rival definition in Sources.
+Take it from the row's own `confidence`; do not re-derive it from `score`. Drop it one level
+if the term you matched is a loose fit for what was asked — a property of the question, which
+the row cannot know. At low, name the rival definition in Sources.
 
 Then stop. You may offer one follow-up, but it may not carry a number — a figure handed over
 without sources is an unsourced answer.

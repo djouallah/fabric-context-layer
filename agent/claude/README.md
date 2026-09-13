@@ -33,8 +33,7 @@ link the first time it needs one, and remembers it for that conversation.
 
 ## Inside this repo
 
-A clone of `fabric-context-layer` ships its own `.claude/skills/fabric-context/`, and a
-project skill wins over a personal one. That is intended: the repo's copy is for **working on
-the code**, and it reads the whole graph out of `context.md` through the clone's query side.
-This one is for **asking a question** with nothing installed. They are different jobs, and
-outside the clone only this one is loaded.
+A clone of `fabric-context-layer` ships its own `.claude/skills/fabric-context/`, which is
+for **working on the code**, and a project skill wins over a personal one. This one is for
+**asking a question** with nothing installed. They are different jobs, and outside the clone
+only this one is loaded.

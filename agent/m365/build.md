@@ -58,7 +58,8 @@ How many archive files are there?
 
 It asks for that link itself if you leave it out - it has no way to find the model on its own.
 
-**Ask something you already know the answer to first.** Run the same two queries by hand with
-`python -m ask dax` and compare, because a wrong number here looks exactly like a right one:
+**Ask something you already know the answer to first.** Run the same two queries by hand - the
+`az rest` call in [../SKILL.md](../SKILL.md) - and compare, because a wrong number here looks
+exactly like a right one:
 the agent still writes the final DAX, and a mistaken filter returns a plausible figure with no
 error at all.

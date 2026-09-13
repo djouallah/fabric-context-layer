@@ -1,7 +1,8 @@
 # agent/ - asking the questions
 
-The harvest side built the context and published it. This side asks it things, and it
-installs nothing.
+This is the asking side. It reads one semantic model, named `context_model`, and it installs
+nothing. How that model comes to exist is the other side of the repo, and it is described
+in [../docs/guide.md](../docs/guide.md), not here.
 
 ## What an agent needs
 
@@ -11,12 +12,12 @@ Two things, and no more:
    connector in Copilot Studio. Plus the tenant setting *Dataset Execute Queries REST API*,
    and Read + Build on the models. Every query runs as the person asking, so RLS applies and
    two people can correctly get different numbers.
-2. **The context model's ids** - `<workspace-guid>/<model-guid>` for the `context_model`
-   semantic model the harvest published beside the lakehouse. Open it in Fabric and the
-   address carries both: `/groups/<workspace-guid>/datasets/<model-guid>`.
+2. **The context model's ids** - `<workspace-guid>/<model-guid>` for the semantic model
+   named `context_model`. Open it in Fabric and the address carries both:
+   `/groups/<workspace-guid>/datasets/<model-guid>`.
 
-No clone, no `pip install`, no OneLake, no local database. The ranking lives in a semantic
-model, so **a re-harvest updates what the agent knows with nothing republished**.
+No clone, nothing installed, no OneLake, no local database. The ranking lives in the model,
+so nothing on this side changes when it changes.
 
 ## How a question is answered
 
@@ -47,11 +48,10 @@ for a portal field with an 8,000-character cap.
 
 ## The limit worth knowing first
 
-`context_model` exposes the ranking - `terms`, `definitions`, `aliases` - and not the whole
-graph. So this side answers *what is revenue*, *what was X for Y*, and *which definition
-should I trust*. It cannot answer *what feeds revenue*, *which reports use it*, or *what is in
-table T*; those live in `context.md` and need the clone-side `python -m ask` (see
-[../docs/guide.md](../docs/guide.md)). The skill says so and stops rather than guessing.
+`context_model` exposes the ranking - `terms`, `definitions`, `aliases` - and nothing else.
+So this side answers *what is revenue*, *what was X for Y*, and *which definition should I
+trust*. It cannot answer *what feeds revenue*, *which reports use it*, or *what is in
+table T*. The skill says so and stops rather than guessing.
 
 ## Before you trust it
 

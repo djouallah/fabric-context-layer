@@ -164,6 +164,48 @@ Microsoft 365 Copilot. The trade is what the model exposes: `terms`, `definition
 `aliases` are the ranking, so that side answers *what is X* and *which definition wins*, and
 says plainly that lineage, reports and table detail are out of its reach.
 
+### The context model
+
+Every run creates or updates a Direct Lake semantic model named `context_model` beside the
+tables, and prints its id on the `semantic model` step - that and the workspace are the two
+ids the agent side asks for. Because it is Direct Lake over the published tables, a later
+harvest refreshes what it serves with no reload and nothing republished on the agent side.
+Creating the model needs a permission publishing the tables did not; if the tenant refuses
+it, the run says so and the context is still published.
+
+What it exposes, and why it is shaped this way ([fabcontext/semantic_model.py](../fabcontext/semantic_model.py)):
+
+```
+aliases [*] ──┐
+              ├──> terms [1] ──> [*] definitions
+              │    term_id          term_id, rank, score, conflicting
+              │    label            name, workspace_id, owner_item_id
+              │    n_definitions    owner_item_name, table_name, expression
+              │    conflicting
+```
+
+- `definitions` is the fact - one row per competing definition, carrying `rank` and `score`.
+- `terms` is the dimension, one row per business term.
+- `aliases` holds every spelling of every term, which is what lets a lookup by the user's own
+  wording land.
+- `workspace_id` and `owner_item_id` are the two GUIDs an agent needs to run the measure on
+  the model that owns it.
+
+The `aliases` relationship is **bidirectional**, deliberately. Filters flow one-to-many, so
+filtering a spelling on the many side would never reach `terms`, let alone propagate on to
+`definitions`, and every lookup by an alias would come back empty - which an agent reads as
+"the term is not defined" rather than as a bug.
+
+`definitions` also carries a `Dax Template` measure returning a ready-to-run
+`EVALUATE ROW("v", CALCULATE([<measure>]))` for the definition in filter context, so an agent
+can copy the query rather than compose one.
+
+The line between what is published here and what is not is what only the harvest can know.
+A ranking is derived from 28 days of query history, endorsement and usage, none of which an
+agent can see, so it is decided here. A model's own tables, columns and values are live state
+the model answers about itself in one metadata call, so publishing them would only serve a
+stale copy.
+
 `wiki/` still opens in Obsidian, and holds the same content as linked pages.
 
 How a question flows:

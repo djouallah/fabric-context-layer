@@ -5,10 +5,9 @@ description: Answer a business-metric question with a single number taken from t
 
 # Answering from the context layer
 
-The harvest has already read the tenant, ranked every competing definition of every business
-term, and published the ranking as a semantic model called **`context_model`**. You answer by
-asking that model which definition wins, then running the winning measure on the model that
-owns it.
+A semantic model named **`context_model`** holds every competing definition of every business
+term, ranked. You answer by asking it which definition wins, then running the winning measure
+on the model that owns it.
 
 **Nothing is installed and nothing is cloned.** You need the Azure CLI signed in
 (`az login`) and the context model's two ids. That is the whole setup.
@@ -93,9 +92,8 @@ number means, and inventing one is exactly what this layer exists to prevent.
 
 ## Step 2 - take rank 1
 
-The row with `rank` = 1 is the answer. The ranking already weighed authority, endorsement, how
-often the measure is actually queried, how widely it is used, and how fresh its model is. Take
-it and move on.
+The row with `rank` = 1 is the answer. The ranking is already decided and is not yours to
+redo. Take it and move on.
 
 Take a different row **only** when the user named a model or workspace, in which case take
 theirs.
@@ -195,14 +193,12 @@ number would be different under another definition.
 **3. Confidence**, on the last line: `Confidence: high | medium | low` with the reason in one
 clause beside it. Not a paragraph, and never an argument with the answer you just gave.
 
-Take it from the row's own `confidence`. The harvest already weighed how far rank 1 led rank
-2 and how much the owning model is actually used - do not re-derive it by comparing `score`
-values yourself.
+Take it from the row's own `confidence`; do not re-derive it by comparing `score` values
+yourself.
 
-Drop it one level if the term you matched is a loose fit for what was asked. That is the one
-part of the judgement the harvest cannot make, because it is a property of the question, not
-of the tenant. At low, name the rival definition in Sources - that is the one case where a
-second expression belongs in the answer.
+Drop it one level if the term you matched is a loose fit for what was asked - that is a
+property of the question, which the row cannot know. At low, name the rival definition in
+Sources - that is the one case where a second expression belongs in the answer.
 
 Then stop. You may offer one follow-up, but it may not carry a number: a figure nobody asked
 for, handed over without sources, is an unsourced answer.
@@ -212,8 +208,8 @@ Never withhold the number in order to discuss definitions.
 
 ## What this cannot answer
 
-`context_model` carries three tables - `terms`, `definitions` and `aliases` - and that is the
-ranking, not the whole graph. Lineage (*what feeds X*), which reports use a measure, and how
+`context_model` carries three tables - `terms`, `definitions` and `aliases` - and nothing
+else. Lineage (*what feeds X*), which reports use a measure, and how
 often one is queried are **not reachable here**. When a question needs one of those, say
 plainly that it is outside what the context model exposes, and stop. Do not substitute a
 guess, and do not go looking for another source.
@@ -236,6 +232,6 @@ model in step 4. Both are questions a model can answer about itself.
 - Never refuse to pick between definitions. The ranking is the layer's job; hand back rank 1,
   sourced, with a confidence. "Here are three definitions, you choose" is a non-answer.
 - Never pick silently either: the one-line conflict note and the confidence are the disclosure.
-- **Never clone a repository, never `pip install` anything, and never run a harvest.** The
-  context already exists; building one is not this agent's job. If the context model cannot be
-  reached, say so and stop.
+- **Never clone a repository, never `pip install` anything, and never try to build the
+  context yourself.** It already exists. If the context model cannot be reached, say so and
+  stop.

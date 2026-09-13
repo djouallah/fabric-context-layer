@@ -8,10 +8,12 @@ fail silently in production:
 - a renamed published column returns an *empty table*, which an agent reads as "the term is
   not defined" rather than as an error;
 - a setup step that reaches for the clone or the harvest puts the whole repo back in front of
-  someone who only wanted a number, which is the thing `agent/` exists to prevent.
+  someone who only wanted a number, which is the thing `agent/` exists to prevent - and so
+  does any explanation of how the context was built, which is the other side of the repo.
 """
 from __future__ import annotations
 
+import glob
 import os
 import re
 
@@ -29,10 +31,11 @@ HEADROOM = 0.85
 
 _REF = re.compile(r"'(terms|definitions|aliases)'\[(\w+)\]")
 
-# What the install-free side must never ask of the person asking a question. `agent/` is the
-# answering side; the context already exists.
+# What the install-free side must never ask of the person asking a question, and must never
+# explain either. `agent/` is the answering side; the context already exists, and how it came
+# to exist is described in docs/guide.md and nowhere under agent/.
 _CLONE = ("git clone", "pip install", "python -m ask", "python -m fabcontext",
-          "fabcontext.harvest")
+          "fabcontext", "harvest", "context.md")
 
 
 def _read(path: str) -> str:
@@ -80,17 +83,19 @@ def test_both_are_told_which_ids_to_run_the_measure_on():
 def test_the_install_free_side_never_reaches_for_the_clone():
     """The point of `agent/`: answering a question costs a Power BI connection and two ids.
 
-    Any of these creeping into the skill or a setup prompt puts the harvest repo back in the
-    way, which is exactly the friction this folder replaced.
+    Any of these creeping into a skill, a README or a setup prompt puts the harvest repo back
+    in the way, which is exactly the friction this folder replaced. Every markdown file under
+    agent/ is held to it, not just the ones that get installed.
     """
-    for name in ("SKILL.md", os.path.join("scout", "README.md"),
-                 os.path.join("claude", "README.md"), os.path.join("copilot", "README.md")):
-        path = os.path.join(AGENT, name)
+    paths = sorted(glob.glob(os.path.join(AGENT, "**", "*.md"), recursive=True))
+    assert paths, "no markdown under agent/"
+    for path in paths:
         body = _read(path).lower()
         # The skill's "Never" section names them in order to forbid them; that is the one
         # place the words belong, so only the instructions above it are checked.
         body = body.split("## never")[0]
         hits = sorted(phrase for phrase in _CLONE if phrase in body)
-        assert not hits, (os.path.join("agent", name) + " tells the reader to " + str(hits)
+        assert not hits, (os.path.relpath(path, ROOT) + " mentions " + str(hits)
                           + " - asking a question needs a Power BI connection and the "
-                          "context model's ids, and nothing else")
+                          "context model's ids, and nothing else; how the context was built "
+                          "belongs in docs/guide.md")
