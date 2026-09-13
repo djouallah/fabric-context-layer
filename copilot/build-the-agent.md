@@ -1,56 +1,64 @@
-# Building the agent by asking for it
+# Building the agent
 
-Copilot Studio can build the agent conversationally, so none of this is a click path. Paste
-the block below into its builder, then paste [instructions.md](instructions.md) - everything
-below its `---` - as the very next message.
+**It has to be [Copilot Studio](https://copilotstudio.microsoft.com).** Two other surfaces look
+like the right place and are not:
 
----
+- **Microsoft 365 Copilot chat** cannot build agents at all. Ask the assistant to create one
+  and it correctly refuses - it has no tool for it.
+- **Agent Builder** (in M365 Copilot, *Agents → Create an agent*) is the friendlier UI and
+  builds an agent by conversation, but it only attaches **knowledge sources**. Microsoft's own
+  guidance: *"If you need more advanced capabilities like Actions to integrate external
+  services, use Microsoft Copilot Studio."* This agent's whole job is running a DAX query, so
+  knowledge-only cannot do it - an agent that can describe definitions but not return a number
+  is not this thing.
 
-Create an agent called "Metric Answers".
+You can still start in Agent Builder if you prefer its flow, but the tool has to be attached in
+Copilot Studio afterwards.
 
-It answers business-metric questions with a single number taken from our tenant's ranked
-metric definitions in Microsoft Fabric.
+## 1. Create it, and paste the instructions
 
-First, set up its tool: add the Power BI connector and enable the action
-"Run a query against a dataset" (ExecuteDatasetQuery). Create the connection now and show me
-the sign-in window so I can pick the right tenant and account. The connection must use the
-signed-in user's own credentials, not a shared or service account, so row-level security
-applies. Confirm to me which account and tenant the connection ended up on before you carry on.
+Copilot Studio → **Create** → **New agent**. Describe it:
 
-That action is the agent's only tool. Do not add any knowledge sources, files, SharePoint
-sites, or web search - everything it needs comes from that one tool.
+```
+An agent called "Metric Answers" that answers business-metric questions with a single number
+taken from our tenant's ranked metric definitions in Microsoft Fabric. It always takes the
+top-ranked definition of a term and calls that measure by name, and it never adds up a number
+of its own. Do not add any knowledge sources, files, SharePoint sites or web search.
+```
 
-Then set the agent's instructions to the text I paste next. Use it verbatim: do not summarise,
-shorten, reword, reformat or "improve" it. It is a protocol, and paraphrasing it breaks the
-guarantee it exists for. Tell me the exact character count you stored so I can check nothing
-was truncated.
-
----
-
-## Two things the prompt cannot do for you
-
-**The sign-in window is interactive by nature.** No wording makes it automatic - it is you
-proving who you are - so that is the one dialog you will click. Check the account it lands on:
-the whole design rests on the connection running as the person asking, which is what makes
-row-level security apply and lets two people correctly get different numbers.
-
-**Builders rewrite instructions they are handed.** That is why the prompt asks for the stored
-character count back. Compare it against the file:
+Then open **Instructions** and paste [instructions.md](instructions.md) - everything below its
+`---` - **verbatim**. Don't let the builder summarise or reword it: it is a protocol, and a
+paraphrase still sounds right while quietly ceasing to take rank 1. Check that what landed is
+the length that left:
 
 ```bash
 awk '/^---$/{f=1;next} f' copilot/instructions.md | wc -c
 ```
 
-Meaningfully short means it paraphrased. Paste again and insist on verbatim - a summarised
-protocol still sounds right and quietly stops taking rank 1.
+## 2. Attach the tool
 
-## Then ask it something
+**Tools → Add a tool → Connector → Power BI → Run a query against a dataset.**
+
+Create the connection when prompted and sign in - that dialog is interactive by nature, since
+it is you proving who you are. Check which account it lands on. The whole design rests on the
+connection running as the person asking: that is what makes row-level security apply and lets
+two people correctly get different numbers. User credentials, never a shared or service
+account.
+
+Add nothing else. That one action is the agent's only tool.
+
+## 3. Publish, then ask it something
+
+Publish to Microsoft 365 Copilot. Pick the agent there and ask:
 
 ```
 Context model: https://app.fabric.microsoft.com/groups/<workspace-id>/datasets/<model-id>
 How many archive files are there?
 ```
 
-The agent asks for that link itself if you leave it out. Answer a question you already know
-the answer to first - run the same two queries by hand with `python -m ask dax` and compare -
-because a wrong number here looks exactly like a right one.
+It asks for that link itself if you leave it out - it has no way to find the model on its own.
+
+**Ask something you already know the answer to first.** Run the same two queries by hand with
+`python -m ask dax` and compare, because a wrong number here looks exactly like a right one:
+the agent still writes the final DAX, and a mistaken filter returns a plausible figure with no
+error at all.
