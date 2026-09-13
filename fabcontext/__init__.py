@@ -78,7 +78,7 @@ def build_and_publish(work: str, store, *, profile: bool = True, values: bool = 
     local store are enough to run the whole second half, which is how the offline suite
     exercises the real publish rather than a mock.
     """
-    from . import files, graph, parse, profiling, publish
+    from . import files, graph, parse, profiling, publish, semantic_model
 
     step, rows = _steps(log)
     raw, build, wiki_dir, graph_html, context_md = _work_dirs(work)
@@ -94,6 +94,14 @@ def build_and_publish(work: str, store, *, profile: bool = True, values: bool = 
             con.close()
             con, counts = step("build (with profiles)", _build)
         published = step("publish", publish.publish, con, store)
+        # The model is a convenience over tables that are already written, and creating it
+        # needs a permission publishing them did not. A tenant that refuses it still has its
+        # context, so the failure is reported by `step` and then let go of.
+        try:
+            model_id = step("semantic model", semantic_model.ensure, con, store)
+        except Exception:                           # noqa: BLE001 - recorded above
+            model_id = None
+            log("  the context is published; only its semantic model was not created")
         if wiki:
             from . import viz
             from . import wiki as wiki_mod
@@ -103,7 +111,8 @@ def build_and_publish(work: str, store, *, profile: bool = True, values: bool = 
         con.close()
     if push:
         step("push files", files.push, store, work, files.ITEMS, False, lambda _m: None)
-    return {"counts": counts, "tables": published, "steps": rows}
+    return {"counts": counts, "tables": published, "steps": rows,
+            "semantic_model": model_id}
 
 
 def harvest(workspaces: Union[str, Sequence[str]], to: Optional[str] = None, *,
@@ -166,6 +175,41 @@ def harvest(workspaces: Union[str, Sequence[str]], to: Optional[str] = None, *,
         + str(len(out["tables"])) + " tables")
     log(store.tables_root)
     return store.tables_root
+
+
+def add_semantic_model(url: str, *, name: Optional[str] = None,
+                       folder: Optional[str] = "context", log=print) -> str:
+    """Create or update the context's semantic model over a lakehouse already published.
+
+    `url` is what `harvest()` returned. This needs no harvest and re-reads no tenant: the
+    ranking is already sitting in `Tables/` as Delta, and a Direct Lake model over it is
+    metadata. Use it to add the model to an existing context, or to repair one.
+
+    Returns the model's id - the `datasetid` an agent runs its lookup against.
+    """
+    from . import semantic_model
+    from ._fabric import onelake
+
+    workspace_id, item_id = semantic_model.ids_from_url(url)
+    # Normalise to the abfss form: a bare `<guid>/<guid>` is a valid address to a person but
+    # not to delta-rs, and reading it raw yields an empty catalog rather than an error.
+    url = onelake.tables_root(workspace_id, item_id)
+
+    class _Store:
+        pass
+
+    store = _Store()
+    store.workspace_id = workspace_id
+    store.item_id = item_id
+
+    con = open_context(url)
+    try:
+        model_id = semantic_model.ensure(
+            con, store, name=name or semantic_model.DEFAULT_NAME, folder=folder)
+    finally:
+        con.close()
+    log("semantic model " + str(model_id) + " in workspace " + workspace_id)
+    return model_id
 
 
 def open_context(url: str, storage_options: Optional[Dict[str, str]] = None):

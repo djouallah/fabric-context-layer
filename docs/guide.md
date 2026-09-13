@@ -320,6 +320,8 @@ on a report-free workspace definitions are ordered on authority, model usage and
 | `ask/__main__.py` | `python -m ask` |
 | `ask/evals.py` | the generated benchmark and its runner |
 | `.claude/skills/fabric-context/SKILL.md` | how Claude Code uses `python -m ask` |
+| `fabcontext/semantic_model.py` | the context's own Direct Lake model - the ranking, queryable as DAX |
+| `copilot/instructions.md` | the M365 Copilot agent's instructions - see [copilot.md](copilot.md) |
 
 ## Known limits
 

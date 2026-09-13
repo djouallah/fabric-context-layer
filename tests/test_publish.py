@@ -16,7 +16,7 @@ REQUIRED = {
     "edges": ["src", "dst", "rel", "weight", "attrs"],
     "terms": ["term_id", "label", "n_definitions", "n_distinct_expr", "n_items",
               "conflicting", "top_def_id", "views", "n_reports"],
-    "definitions": ["def_id", "term_id", "name", "kind", "workspace", "owner_item_id",
+    "definitions": ["def_id", "term_id", "name", "kind", "workspace", "workspace_id", "owner_item_id",
                     "owner_item_name", "table_name", "expression", "description",
                     "endorsement", "modified_at", "n_reports", "n_visuals", "views",
                     "authority", "popularity", "relevance", "freshness", "score", "rank",
@@ -171,7 +171,7 @@ def test_the_whole_second_half_runs(tmp_path):
 
     out = build_and_publish(str(work), store, profile=False, wiki=True,
                             log=lambda *_a, **_k: None)
-    assert [status for _n, _t, status in out["steps"]] == ["ok"] * 5
+    assert [status for _n, _t, status in out["steps"]] == ["ok"] * 6
     assert len(out["tables"]) == 13 and out["tables"]["nodes"] > 30
     assert len(store.list("raw")) > 20            # the next run's incremental starting point
     assert len(store.list("wiki")) > 10

@@ -132,6 +132,27 @@ def await_lro_result(token: str, resp) -> dict:
     raise FabricError("timed out waiting for the operation result")
 
 
+def await_lro(token: str, resp) -> None:
+    """Poll a long-running operation to Succeeded. For the ones that return no body.
+
+    `updateDefinition` is the case: it answers 202 and then has nothing at `/result`, so
+    asking for one turns a successful update into a 400.
+    """
+    location = resp.headers.get("Location")
+    if not location:
+        return
+    for _ in range(int(POLL_TIMEOUT // max(POLL_INTERVAL, 1)) + 1):
+        _sleep(POLL_INTERVAL)
+        poll = request("GET", location, token=token)
+        poll.raise_for_status()
+        status = poll.json().get("status")
+        if status == "Succeeded":
+            return
+        if status in ("Failed", "Undetermined"):
+            raise FabricError("operation failed: " + str(poll.json())[:300])
+    raise FabricError("timed out waiting for the operation")
+
+
 def await_lro_item_id(token: str, resp) -> str:
     """Poll a create operation to completion and return the new item's id. Some tenants put
     it on the operation itself, others only on `/result`."""

@@ -40,6 +40,7 @@ The first call creates the lakehouse; every later one updates it. It returns the
 agent asks against.
 
 The ranking, what is harvested, the schema, how to ask, the limits: **[docs/guide.md](docs/guide.md)**.
+Ask from Microsoft 365 Copilot, with nothing installed: **[docs/copilot.md](docs/copilot.md)**.
 
 ## Licence
 

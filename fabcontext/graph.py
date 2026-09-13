@@ -211,6 +211,9 @@ def _derive(con, aliases: Optional[Dict[str, List[str]]] = None) -> None:
             SELECT m.id                                   AS def_id,
                    replace(t.dst, 'term:', '')            AS term_id,
                    m.name, m.kind, m.workspace,
+                   -- the workspace's own GUID, not just its name: a caller that runs the
+                   -- measure needs both ids, and every other table here carries names only.
+                   w.item_id                              AS workspace_id,
                    m.item_id                              AS owner_item_id,
                    coalesce(o.name, m.workspace)          AS owner_item_name,
                    json_extract_string(m.attrs, '$.table')                      AS table_name,
@@ -227,6 +230,7 @@ def _derive(con, aliases: Optional[Dict[str, List[str]]] = None) -> None:
                      ON o.item_id = m.item_id
                     AND o.kind = CASE m.kind WHEN 'measure' THEN 'semantic_model'
                                              ELSE 'report' END
+              LEFT JOIN nodes w ON w.kind = 'workspace' AND w.name = m.workspace
              WHERE t.rel = 'defines'
         ), u AS (
             SELECT mu.def_id,
