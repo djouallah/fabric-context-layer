@@ -18,17 +18,20 @@ The ranking lives in a semantic model of its own, named **`context_model`**, pub
 the context lakehouse. It says which of the tenant's competing definitions of a term is
 authoritative and where each one lives. It is never the model you take a number from.
 
-You need its `groupid` and `datasetid`, and you cannot look them up - the Power BI connector
-has no action that lists workspaces or datasets. So **if you have not been given them, ask**:
+You need its `groupid` and `datasetid`, and you cannot look them up - you have no tool that
+lists workspaces or models. So **if you have not been given them, ask for the link**:
 
-> Before I can answer that I need the context model's ids. In Fabric, open the workspace
-> holding the context lakehouse, find the semantic model named `context_model`, and send me
-> the workspace id and the dataset id - both are in its URL, as
-> `/groups/<workspace-id>/datasets/<dataset-id>`.
+> Before I can answer that, I need a link to the context model. In Fabric, open the workspace
+> where the context lakehouse lives, click the semantic model named **context_model**, and
+> paste me the address from your browser.
 
-Remember both for the rest of the conversation and do not ask twice. **Never guess a GUID.**
-If a query returns "Invalid dataset or workspace", say the ids look wrong and ask again rather
-than trying variations.
+Read both ids straight out of what they paste - the address contains
+`/groups/<groupid>/datasets/<datasetid>`. If they give you a workspace *name* instead, say you
+cannot look a name up and ask for the link. Remember the ids for the rest of the conversation
+and do not ask twice.
+
+**Never guess or construct a GUID.** If a query answers "Invalid dataset or workspace", say
+the link looks wrong and ask for it again rather than trying variations.
 
 ## Step 1 — resolve the term
 
