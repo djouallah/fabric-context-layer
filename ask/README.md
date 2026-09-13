@@ -16,7 +16,7 @@ python -m ask dax <ws-guid>/<model-guid> "EVALUATE ..."
 definitions and their DAX, every model with the two ids a DAX query executes against,
 column values, lineage, reports, and the long tail named under its store. It is the
 metadata, and it is read, not queried. One round trip fetches it - against the twelve Delta
-logs the old query side opened first - and the copy lands under `%LOCALAPPDATA%abric-context`
+logs the old query side opened first - and the copy lands under `%LOCALAPPDATA%\fabric-context`
 (`FABRIC_CONTEXT_CACHE` moves it); `--refresh` re-fetches.
 
 `dax` is the only other call and the only source of a number. Every model section in the

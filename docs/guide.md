@@ -127,7 +127,7 @@ python -m ask dax <ws-guid>/<model-guid> "EVALUATE ROW(\"v\", [<measure>])"
 `context.md` is the metadata: every term with its ranked definitions and their DAX, every
 model with the two ids a query executes against, column values, lineage, reports, and the
 long tail named under its store. An agent reads it. One round trip fetches it, it opens no
-Delta table, and the copy lands in `%LOCALAPPDATA%abric-context`; `--refresh` re-fetches.
+Delta table, and the copy lands in `%LOCALAPPDATA%\fabric-context`; `--refresh` re-fetches.
 
 `dax` is the only other call and the only source of a number. It takes the ids straight from
 the file - every model section prints a `run:` line to copy - so running a number looks
@@ -141,7 +141,10 @@ database driver at all: no duckdb, no deltalake, no DuckDB extension, no pull.
 
 Any agent that can run a command line can drive it. The repo ships the protocol as a Claude
 Code skill (`.claude/skills/fabric-context/SKILL.md`); another agent needs only the same
-steps - read the file, take rank 1, call it by name, cite it. `wiki/` still opens in
+steps - read the file, take rank 1, call it by name, cite it. GitHub Copilot - VS Code, the
+CLI, the cloud agent - loads that same skill from `.claude/skills/` on its own, and
+`.github/copilot-instructions.md` carries the routing rule and what the commands need on a
+laptop: Python 3.12, `pip install -e .`, `az login`, `--db`. `wiki/` still opens in
 Obsidian, and holds the same content as linked pages.
 
 How a question flows:
@@ -320,6 +323,7 @@ on a report-free workspace definitions are ordered on authority, model usage and
 | `ask/__main__.py` | `python -m ask` |
 | `ask/evals.py` | the generated benchmark and its runner |
 | `.claude/skills/fabric-context/SKILL.md` | how Claude Code uses `python -m ask` |
+| `.github/copilot-instructions.md` | GitHub Copilot: the routing rule and the setup `python -m ask` expects; the skill itself is loaded from `.claude/skills/` |
 | `fabcontext/semantic_model.py` | the context's own Direct Lake model - the ranking, queryable as DAX |
 | `copilot/instructions.md` | the M365 Copilot agent's instructions - see [copilot.md](copilot.md) |
 
