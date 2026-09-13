@@ -58,7 +58,7 @@ ANSWER_SCHEMA = {
 BASELINE_PROMPT = (
     "You answer questions about a Microsoft Fabric tenant. Semantic model definitions (TMSL) "
     "are on disk under {raw}/<workspace>/definitions/SemanticModel/<model-id>/model.bim, with "
-    "item ids in {raw}/<workspace>/items.json. To run a DAX query: python -m ask dax <model-id> "
+    "item ids in {raw}/<workspace>/items.json. To run a DAX query: python -m ask dax <workspace-id>/<model-id> "
     "\"<EVALUATE ...>\" --json. Nothing else is available. Answer in the requested JSON; set "
     "out_of_scope true when you cannot find the answer.")
 
@@ -147,7 +147,7 @@ def generate(con, per_class: int = 3, live_values: bool = True) -> List[Dict[str
         seen_models.add(t[6])
         made += 1
         table, column, value = pick
-        dax = ('EVALUATE ROW("v", CALCULATE([' + t[4] + "], " + fabric._dax_name(table, column)
+        dax = ('EVALUATE ROW("v", CALCULATE([' + t[4] + "], " + _dax_name(table, column)
                + ' = "' + str(value).replace('"', '""') + '"))')
         out.append(_q("data-%02d" % made, "data",
                       "What is the " + t[4] + " where " + column + " is '" + str(value) + "'?",
@@ -163,6 +163,31 @@ def generate(con, per_class: int = 3, live_values: bool = True) -> List[Dict[str
                           expect={"refuses": True}))
             break
     return out
+
+
+def _dax_name(table: str, column: str) -> str:
+    """`'Table'[Column]`, with DAX's own escapes: a quote doubles, a closing bracket doubles."""
+    return ("'" + str(table).replace("'", "''") + "'["
+            + str(column).replace("]", "]]") + "]")
+
+
+def _live_values(workspace_id: str, model_item_id: str, table: str, column: str,
+                 limit: int = 50) -> Dict[str, Any]:
+    """Distinct values of one column, straight from the model.
+
+    `ask/fabric.py` has no `values()` helper on purpose - the client runs DAX and nothing else,
+    and `tests/test_client_is_thin.py` asserts it stays that way - so the benchmark, which is a
+    maintainer tool, writes the query itself. One row past the limit tells it apart from a
+    column that merely has exactly `limit` values.
+    """
+    query = ("EVALUATE TOPN(" + str(limit + 1) + ", VALUES(" + _dax_name(table, column) + "))")
+    out = fabric.dax(workspace_id, model_item_id, query, max_rows=limit + 1)
+    if not out["columns"]:
+        return {"values": [], "n_distinct": 0, "truncated": False}
+    key = out["columns"][0]
+    values = [r.get(key) for r in out["rows"]]
+    return {"values": values[:limit], "n_distinct": len(values),
+            "truncated": len(values) > limit}
 
 
 def _pick_filter(con, model_item_id: str, live_values: bool):
@@ -190,7 +215,7 @@ def _pick_filter(con, model_item_id: str, live_values: bool):
             try:
                 ws = con.execute("SELECT w.item_id FROM nodes m JOIN nodes w ON w.kind = 'workspace' "
                                  "AND w.name = m.workspace WHERE m.id = ?", [m[0]]).fetchone()[0]
-                live = fabric.values(ws, model_item_id, tname, cname, limit=50)
+                live = _live_values(ws, model_item_id, tname, cname, limit=50)
                 values, n_distinct = live["values"], live.get("n_distinct")
                 if live.get("truncated"):
                     values = None                      # more than the cap: not a filter column

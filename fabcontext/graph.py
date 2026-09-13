@@ -34,11 +34,13 @@ W_AUTHORITY = 2.0
 W_POPULARITY = 1.5
 W_RELEVANCE = 1.0
 W_FRESHNESS = 0.5
+_SCORE = (str(W_AUTHORITY) + " * authority + " + str(W_POPULARITY) + " * popularity + "
+          + str(W_RELEVANCE) + " * relevance + " + str(W_FRESHNESS) + " * freshness")
 VIEW_WINDOW_DAYS = 28
 FRESHNESS_HALFLIFE_DAYS = 180.0
 
 # Bumped when a published table or column changes shape; ask/ checks it.
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 # Activity families. Views are people opening things; runs and queries are people using
 # them another way. The harvest's own calls and storage churn are noise, not usage.
@@ -290,21 +292,35 @@ def _derive(con, aliases: Optional[Dict[str, List[str]]] = None) -> None:
               LEFT JOIN u USING (def_id)
               LEFT JOIN item_usage ou ON ou.item_id = d.owner_item_id
               LEFT JOIN q ON q.def_id = d.def_id
+        ), scored AS (
+            SELECT *,
+                   """ + _SCORE + """                                        AS score,
+                   row_number() OVER (PARTITION BY term_id
+                                      ORDER BY """ + _SCORE + """ DESC,
+                                               name)                         AS rank,
+                   count(DISTINCT expression_norm)
+                     OVER (PARTITION BY term_id) > 1                         AS conflicting,
+                   count(*) OVER (PARTITION BY term_id)                      AS n_definitions
+              FROM s
+        ), margin AS (
+            -- How far the winner leads the runner-up of the same term. The agent used to
+            -- derive this by comparing two floats it had been handed; deciding how clear the
+            -- ranking was is this side's job, the same as deciding the ranking.
+            SELECT *,
+                   max(CASE WHEN rank = 1 THEN score END) OVER (PARTITION BY term_id)
+                     - max(CASE WHEN rank = 2 THEN score END) OVER (PARTITION BY term_id)
+                                                                             AS top_margin
+              FROM scored
         )
+        -- The rubric the agent instructions used to carry in prose. The one clause that
+        -- cannot live here is whether the term is a loose fit for what was asked, which is
+        -- a property of the question and not of the tenant - the agent still judges that.
         SELECT *,
-               """ + str(W_AUTHORITY) + """ * authority
-             + """ + str(W_POPULARITY) + """ * popularity
-             + """ + str(W_RELEVANCE) + """ * relevance
-             + """ + str(W_FRESHNESS) + """ * freshness                      AS score,
-               row_number() OVER (PARTITION BY term_id
-                                  ORDER BY """ + str(W_AUTHORITY) + """ * authority
-                                         + """ + str(W_POPULARITY) + """ * popularity
-                                         + """ + str(W_RELEVANCE) + """ * relevance
-                                         + """ + str(W_FRESHNESS) + """ * freshness DESC,
-                                           name)                             AS rank,
-               count(DISTINCT expression_norm)
-                 OVER (PARTITION BY term_id) > 1                             AS conflicting
-          FROM s""")
+               CASE WHEN n_definitions > 1 AND top_margin < 0.5              THEN 'low'
+                    WHEN n_definitions > 1 AND top_margin <= 1.0             THEN 'medium'
+                    WHEN views = 0 AND queries = 0 AND owner_usage = 0       THEN 'medium'
+                    ELSE 'high' END                                          AS confidence
+          FROM margin""")
 
     # --- the term layer ---------------------------------------------------------------
     con.execute("""

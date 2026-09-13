@@ -37,6 +37,20 @@ def test_no_sql_path_survives():
         assert not hasattr(fabric, name), name + " is still on the client"
 
 
+def test_the_benchmark_builds_its_own_column_names_and_values():
+    """`evals` used to call `fabric.values()` and `fabric._dax_name()`, neither of which exists.
+
+    The first is forbidden above, so the benchmark - a maintainer tool, and the only caller -
+    owns both. This pins that they are there and that the DAX escaping is right, because a
+    table named `O'Brien` otherwise builds a query that silently means something else.
+    """
+    from ask import evals
+
+    assert evals._dax_name("Sales", "Region") == "'Sales'[Region]"
+    assert evals._dax_name("O'Brien", "a]b") == "'O''Brien'[a]]b]"
+    assert callable(evals._live_values)
+
+
 def test_dax_takes_its_ids_from_the_file(monkeypatch):
     """`context.md` prints `<workspace_id>/<item_id>`; `dax` takes exactly that and looks
     nothing up, so running a number opens no database."""

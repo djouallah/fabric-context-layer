@@ -281,7 +281,9 @@ def test_context_md_is_one_file(con, rendered, context_md):
 
 def test_context_md_header_says_when_and_where(context_md):
     assert "built_at: " in context_md
-    assert "schema_version: 4" in context_md
+    # From the constant, not a literal: a schema bump is a deliberate act, not a test to fix.
+    from fabcontext.graph import SCHEMA_VERSION
+    assert "schema_version: " + str(SCHEMA_VERSION) in context_md
     assert "- workspace Sales Demo (" + WS + ")" in context_md
     assert "## How to use this file" in context_md
     assert "Rank 1 is the answer" in context_md

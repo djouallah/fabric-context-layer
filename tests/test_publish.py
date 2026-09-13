@@ -20,7 +20,7 @@ REQUIRED = {
                     "owner_item_name", "table_name", "expression", "description",
                     "endorsement", "modified_at", "n_reports", "n_visuals", "views",
                     "authority", "popularity", "relevance", "freshness", "score", "rank",
-                    "conflicting"],
+                    "conflicting", "n_definitions", "top_margin", "confidence"],
     "flow": ["up", "down", "rel"],
     "measure_usage": ["def_id", "report_id", "n_visuals"],
     "item_views": ["item_id", "views"],
@@ -107,6 +107,40 @@ def test_the_ranking_survives_the_round_trip(con, store):
         assert back.execute("SELECT count(*) FROM flow").fetchone()[0] > 0
     finally:
         back.close()
+
+
+def test_confidence_is_decided_here_and_not_by_the_agent(con):
+    """The agent used to compare two floats it had been handed. It reads a word now.
+
+    `top_margin` is how far rank 1 leads rank 2 of the same term, and `confidence` is the
+    rubric the instructions used to carry in prose - so the rubric is testable, and one
+    tenant's answer cannot drift from another's because a model did the arithmetic.
+    """
+    rows = con.execute("SELECT rank, top_margin, confidence, n_definitions FROM definitions "
+                       "WHERE term_id = 'revenue' ORDER BY rank").fetchall()
+    assert [r[3] for r in rows] == [3, 3, 3], rows
+    # The margin is a property of the *term* - how clear the call between definitions was -
+    # so every row of the term carries the same one, including a row that did not win.
+    assert len({r[1] for r in rows}) == 1 and rows[0][1] is not None, rows
+
+    # Confidence is a property of the *row*, because it answers "how much do I trust this
+    # answer" and that depends on which definition was taken: a clear ranking taken off a
+    # model nobody has opened is not a high-confidence number.
+    margin = rows[0][1]
+    by_margin = "low" if margin < 0.5 else ("medium" if margin <= 1.0 else "high")
+    for rank, _m, confidence, _n in rows:
+        assert confidence in ("high", "medium", "low"), rows
+        assert confidence == by_margin or confidence == "medium", rows
+        if confidence == "high":
+            used = con.execute("SELECT views + queries + owner_usage FROM definitions "
+                               "WHERE term_id = 'revenue' AND rank = ?", [rank]).fetchone()[0]
+            assert used > 0, (rank, used)
+
+    # A term with one definition has no runner-up, so no margin - and is never `low`.
+    solo = con.execute("SELECT top_margin, confidence FROM definitions "
+                       "WHERE n_definitions = 1 LIMIT 1").fetchone()
+    if solo:
+        assert solo[0] is None and solo[1] in ("high", "medium"), solo
 
 
 # ----------------------------------------------------------------------------- files

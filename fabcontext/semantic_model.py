@@ -21,8 +21,12 @@ import re
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
-# The three tables the model exposes. The rest of the published graph is not part of the
-# question "which definition of this term wins", and a narrower model is a cheaper prompt.
+# The three tables the model exposes. The line is not thin versus thick - it is what only the
+# harvest can know. A ranking is derived from 28 days of query history, endorsement and usage,
+# none of which an agent can see, so it is decided here and published. A model's own structure
+# - its tables, columns and their values - is live state that the model answers about itself in
+# one metadata call, so publishing it would only serve a stale copy: a column renamed after the
+# last harvest reads back as confidently wrong, which is worse than not being there at all.
 TABLES = ("terms", "definitions", "aliases")
 KEY = "term_id"
 SCHEMA = "dbo"

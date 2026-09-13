@@ -29,6 +29,16 @@ re-derived. Weights are hand-picked, in `fabcontext/graph.py`. **Rank is not cor
 popular, certified, wrong definition still wins, and every answer to a conflicting term
 says so in one line.
 
+How *clear* the call was is decided here too, not by whoever reads the result. Every row of
+`definitions` carries `top_margin` - the winner's lead over the runner-up of the same term -
+and `confidence`, which is `high` when a term has one definition or rank 1 leads by more than
+1.0, `low` when the top two are within 0.5, and `medium` otherwise; any row whose owning model
+shows no recent use at all is capped at `medium`. The margin is a property of the term, so
+every row of it carries the same one; the confidence is a property of the row, because a clear
+ranking taken off a model nobody opens is not a high-confidence number. The one part left to
+the caller is whether the term it matched is a loose fit for the question actually asked -
+that is a property of the question, and nothing in the tenant can know it.
+
 ## Run it
 
 Two lines in a Fabric notebook:

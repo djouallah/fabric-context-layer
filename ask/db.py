@@ -74,7 +74,7 @@ REQUIRED = {
                     "owner_item_name", "table_name", "expression", "description",
                     "endorsement", "modified_at", "n_reports", "n_visuals", "views",
                     "authority", "popularity", "relevance", "freshness", "score", "rank",
-                    "conflicting"],
+                    "conflicting", "n_definitions", "top_margin", "confidence"],
     "flow": ["up", "down", "rel"],
     "measure_usage": ["def_id", "report_id", "n_visuals"],
     "item_views": ["item_id", "views"],

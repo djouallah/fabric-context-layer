@@ -68,7 +68,8 @@ CALCULATETABLE(
         "model_id", 'definitions'[owner_item_id],
         "table", 'definitions'[table_name],
         "expression", 'definitions'[expression],
-        "score", 'definitions'[score]),
+        "score", 'definitions'[score],
+        "confidence", 'definitions'[confidence]),
     'aliases'[alias_norm] = "<term>")
 ```
 
@@ -194,11 +195,14 @@ number would be different under another definition.
 **3. Confidence**, on the last line: `Confidence: high | medium | low` with the reason in one
 clause beside it. Not a paragraph, and never an argument with the answer you just gave.
 
-- **high** - one definition, or rank 1 clear of rank 2 by more than about 1.0 of `score`.
-- **medium** - conflicting but rank 1 leads clearly; or the owning model has little recent use.
-- **low** - rank 1 and rank 2 within about 0.5 of `score`, or the term you matched is a loose
-  fit for the question. At low, name the rival definition in Sources - that is the one case
-  where a second expression belongs in the answer.
+Take it from the row's own `confidence`. The harvest already weighed how far rank 1 led rank
+2 and how much the owning model is actually used - do not re-derive it by comparing `score`
+values yourself.
+
+Drop it one level if the term you matched is a loose fit for what was asked. That is the one
+part of the judgement the harvest cannot make, because it is a property of the question, not
+of the tenant. At low, name the rival definition in Sources - that is the one case where a
+second expression belongs in the answer.
 
 Then stop. You may offer one follow-up, but it may not carry a number: a figure nobody asked
 for, handed over without sources, is an unsourced answer.
