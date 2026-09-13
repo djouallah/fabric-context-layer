@@ -129,7 +129,7 @@ and no caveat here: the reader must be able to stop after this block and have th
 **2. Sources**, under that heading:
 
 - the measure and the model it came from;
-- its rank out of how many definitions, and the score;
+- its rank out of how many definitions, and the score, to two decimals;
 - the DAX you ran, verbatim, so it can be checked;
 - the unrounded value, if you rounded.
 
