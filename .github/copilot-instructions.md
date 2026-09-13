@@ -23,8 +23,10 @@ from memory.
   - In ask mode you cannot run commands: say the question needs agent mode and stop.
   - The cloud agent has no `az login`: say so and stop; do not set up credentials.
 
-`copilot/` and `docs/copilot.md` are for Microsoft 365 Copilot - a Copilot Studio agent over
-the Power BI connector. They are not instructions for you; do not paste or follow them here.
+`agent/` is the other side of this repo: how someone with no clone points a tool at an
+already-published context, over Power BI alone. It is documentation of that setup, not
+instructions for you - do not paste or follow `agent/SKILL.md` or `agent/m365/instructions.md`
+here. In this clone you use the skill in `.claude/skills/`, which reads `context.md`.
 
 ## Working on the code
 

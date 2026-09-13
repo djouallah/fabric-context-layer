@@ -32,7 +32,7 @@ paraphrase still sounds right while quietly ceasing to take rank 1. Check that w
 the length that left:
 
 ```bash
-awk '/^---$/{f=1;next} f' copilot/instructions.md | wc -c
+awk '/^---$/{f=1;next} f' agent/m365/instructions.md | wc -c
 ```
 
 ## 2. Attach the tool

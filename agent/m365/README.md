@@ -29,7 +29,7 @@ fabcontext.harvest("My Workspace")
 The run prints the model's id on its `semantic model` step - that is the `datasetid` the agent
 needs, and the workspace is the one you harvested into.
 
-What it builds, and why it is shaped this way ([fabcontext/semantic_model.py](../fabcontext/semantic_model.py)):
+What it builds, and why it is shaped this way ([fabcontext/semantic_model.py](../../fabcontext/semantic_model.py)):
 
 ```
 aliases [*] ──┐
@@ -78,9 +78,9 @@ A contested term returns several rows, ranked 1..n.
 Built in **Copilot Studio** and published to M365 Copilot. Two nearby surfaces cannot do it:
 the M365 Copilot assistant has no tool for creating agents and correctly refuses, and Agent
 Builder attaches knowledge sources but not Actions - and this agent's whole job is running a
-query. [copilot/build-the-agent.md](../copilot/build-the-agent.md) walks it through; in short:
+query. [build.md](build.md) walks it through; in short:
 
-1. Paste [copilot/instructions.md](../copilot/instructions.md) - everything below the `---` -
+1. Paste [instructions.md](instructions.md) - everything below the `---` -
    into the agent's instructions. Nothing to fill in: the first time it needs them, the agent
    asks whoever is talking to it for a link to the `context_model` semantic model and reads
    both ids out of the address. It has to ask, because the Power BI connector has no action

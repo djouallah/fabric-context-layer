@@ -139,29 +139,22 @@ its number means, so the honest answer is to say that and describe what is known
 compute one and imply a definition nobody wrote. That is also why the client needs no
 database driver at all: no duckdb, no deltalake, no DuckDB extension, no pull.
 
-Any agent that can run a command line can drive it. The repo ships the protocol as a Claude
-Code skill (`.claude/skills/fabric-context/SKILL.md`), and the skill carries what its commands
-need on a laptop - Python 3.12, the clone's root, `pip install -e .`, `az login`, `--db` - so
-another agent needs only the same steps: read the file, take rank 1, call it by name, cite
-it. GitHub Copilot - VS Code, the CLI, the cloud agent - loads it from `.claude/skills/` on
-its own; `.github/copilot-instructions.md` is the rule that sends tenant questions to it.
-Microsoft Scout reads skills from its own folder rather than the repo, so link the skill
-there once and it is discovered at the next conversation - a junction on Windows, a symlink
-on macOS, both tracking the clone:
+**This is the clone-side path, and it is not the only one.** `python -m ask` needs Python
+3.12, this clone, `pip install -e .` and `az login`, and in exchange it reads the whole graph
+- lineage, reports, tables, profiled column values. The repo ships that protocol as a Claude
+Code skill (`.claude/skills/fabric-context/SKILL.md`); GitHub Copilot loads it from
+`.claude/skills/` too, and `.github/copilot-instructions.md` is the rule that sends tenant
+questions to it.
 
-```powershell
-cmd /c mklink /J "$HOME\.copilot\skills\fabric-context" "$PWD\.claude\skills\fabric-context"
-```
+Anyone who only wants a number installs nothing. The harvest also publishes the ranking as a
+semantic model (`context_model`), so one DAX query says which definition wins and carries the
+ids to run it against, and a second runs it - over a read-only Power BI connection and no
+clone at all. That is [agent/](../agent/), one folder per tool: Claude, GitHub Copilot, Scout,
+Microsoft 365 Copilot. The trade is what the model exposes: `terms`, `definitions` and
+`aliases` are the ranking, so that side answers *what is X* and *which definition wins*, and
+says plainly that lineage, reports and table detail are out of its reach.
 
-```bash
-ln -s "$PWD/.claude/skills/fabric-context" ~/.copilot/skills/fabric-context
-```
-
-Make the clone Scout's workspace, or tell it once where the clone is, and set
-`FABRIC_CONTEXT_CACHE` to a folder inside that workspace so the fetched file is one Scout may
-read without a prompt. The commands reach the network, so Scout asks before the first run;
-"Always allow" is the answer. `wiki/` still opens in Obsidian, and holds the same content as
-linked pages.
+`wiki/` still opens in Obsidian, and holds the same content as linked pages.
 
 How a question flows:
 
@@ -338,10 +331,12 @@ on a report-free workspace definitions are ordered on authority, model usage and
 | `ask/db.py` | the published tables in DuckDB - read by the benchmark, and by nothing else |
 | `ask/__main__.py` | `python -m ask` |
 | `ask/evals.py` | the generated benchmark and its runner |
-| `.claude/skills/fabric-context/SKILL.md` | how Claude Code uses `python -m ask` |
-| `.github/copilot-instructions.md` | GitHub Copilot: the rule that sends tenant questions to the skill, which it loads from `.claude/skills/` |
+| `.claude/skills/fabric-context/SKILL.md` | in this clone: how Claude Code uses `python -m ask` |
+| `.github/copilot-instructions.md` | in this clone: the rule that sends tenant questions to that skill |
+| `agent/SKILL.md` | no clone: the protocol over Power BI alone, installed by Claude, Copilot and Scout alike |
+| `agent/<tool>/README.md` | no clone: where each tool wants that file, and how it signs in |
 | `fabcontext/semantic_model.py` | the context's own Direct Lake model - the ranking, queryable as DAX |
-| `copilot/instructions.md` | the M365 Copilot agent's instructions - see [copilot.md](copilot.md) |
+| `agent/m365/instructions.md` | the M365 Copilot agent's instructions - see [agent/m365/](../agent/m365/) |
 
 ## Known limits
 

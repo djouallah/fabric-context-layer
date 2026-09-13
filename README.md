@@ -42,12 +42,10 @@ The ranking, what is harvested, the schema, how to ask, the limits: **[docs/guid
 
 ## Agent
 
-The agent can be anything - GitHub Copilot, Claude, whatever. It only needs two things: a way
-to read the context, and a way to run DAX queries. GitHub Copilot and Microsoft Scout need
-only Python installed; the guide says where each finds the skill.
-
-I am experimenting with Microsoft 365 Copilot, because its Power BI connector is native and
-there is nothing to install: **[docs/copilot.md](docs/copilot.md)**.
+The agent can be anything - Claude, GitHub Copilot, Scout, Microsoft 365 Copilot. It needs
+two things and installs nothing: a read-only Power BI connection, and the ids of the semantic
+model the harvest published the ranking into. One DAX query asks that model which definition
+wins; a second runs it. One folder per tool: **[agent/](agent/)**.
 
 ## Licence
 
