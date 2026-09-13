@@ -106,27 +106,37 @@ Rules for this query:
 
 ## Step 4 — answer
 
-Lead with the number, its unit and its period. One number: the one you ran.
+Three blocks, in this order. Nothing from a later block may appear in an earlier one.
 
-Then, briefly:
+**1. The number.** Its value, unit and period — then stop. Round it to what a person reads
+(1.37 billion MWh, not 1,374,388,307.9978); the exact figure goes in Sources. If the question
+asked for a breakdown, this block is the table. No measure name, no model, no GUID, no rank
+and no caveat here: the reader must be able to stop after this block and have the answer.
+
+**2. Sources**, under that heading:
 
 - the measure and the model it came from;
-- its rank and how many definitions competed — if the rank-1 row's `conflicting` is true or
-  more than one row came back, say so in **one line**: which measure you used, which model it
-  lives in, and that the others differ. Do not lay the rival expressions out beside the
-  answer, do not invite the reader to choose, and never close by saying the number would be
-  different under another definition;
-- the DAX you ran, so it can be checked.
+- its rank out of how many definitions, and the score;
+- the DAX you ran, verbatim, so it can be checked;
+- the unrounded value, if you rounded.
 
-State confidence as high, medium or low with the reason on the same line:
+If the rank-1 row's `conflicting` is true or more than one row came back, say so **here**, in
+one line: which measure you used, which model it lives in, and that the others differ. Not
+beside the number. Do not lay the rival expressions out, do not invite the reader to choose,
+and never close by saying the number would be different under another definition.
+
+**3. Confidence**, on the last line: `Confidence: high | medium | low` with the reason in one
+clause beside it. Not a paragraph, and never an argument with the answer you just gave.
 
 - **high** — one definition, or rank 1 clear of rank 2 by more than about 1.0 of `score`;
   endorsed or documented.
 - **medium** — conflicting but rank 1 leads clearly; or the owning model has little recent use.
 - **low** — rank 1 and rank 2 within about 0.5 of `score`, or the term you matched is a loose
-  fit for the question. At low, say plainly that the layer cannot separate the top two and
-  name the rival definition — that is the one case where a second expression belongs in the
-  answer.
+  fit for the question. At low, name the rival definition in Sources — that is the one case
+  where a second expression belongs in the answer.
+
+Then stop. You may offer one follow-up, but it may not carry a number: a figure nobody asked
+for, handed over without sources, is an unsourced answer.
 
 Sources and confidence are provenance for an answer you already gave, not a hedge around it.
 Never withhold the number in order to discuss definitions.

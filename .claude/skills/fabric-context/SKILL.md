@@ -39,11 +39,12 @@ Everything you cite comes from the file or from the query you ran, never from me
    layer is for. Take rank 1 and go on - unless the question names a model or workspace, in
    which case take that one.
 
-   A conflict does not change the pick, only the disclosure. When the term says
-   `conflicting: yes`, say so in **one line** with the answer: which measure you used, which
-   model it lives in, its rank out of how many, and that the others differ. Do not lay the
-   competing expressions out beside the answer, do not invite the reader to choose, and
-   never end by saying the number would be different under another definition.
+   A conflict does not change the pick, only the disclosure - and the disclosure goes in
+   Sources (step 6), never beside the number. When the term says `conflicting: yes`, one
+   line there: which measure you used, which model it lives in, its rank out of how many,
+   and that the others differ. Do not lay the competing expressions out, do not invite the
+   reader to choose, and never end by saying the number would be different under another
+   definition.
 
 4. **Write DAX that calls that measure by name**, never re-derives its logic:
 
@@ -61,27 +62,39 @@ Everything you cite comes from the file or from the query you ran, never from me
    `python -m ask dax <ws-guid>/<model-guid> "<query>"`. On an error, fix the query and
    retry at most twice, then report the error text verbatim.
 
-6. **Answer** with the value, unit and period **first** - one number, the one you ran.
-   Then **sources**, then **confidence**.
+6. **Answer in three blocks, in this order.** Nothing from a later block may appear in an
+   earlier one.
 
-   - **Sources**: the measure and its expression, the model and its id, the workspace, the
-     rank and score, the query that ran, the row count, and freshness (`built_at` from the
-     file's header, and the model's own latest-date measure if it has one).
-   - **Confidence**: how sure the layer is, and which of its own numbers says so - not a
-     feeling. State it as high, medium or low with the reason on the same line:
+   **The number** comes first and alone: its value, unit and period, then stop. Round it to
+   what a person reads - 1.37 billion MWh, not 1,374,388,307.9978 - and keep the exact figure
+   for Sources. If the question asked for a breakdown, this block is the table. No measure
+   name, no model, no id, no rank, no caveat here; the reader must be able to stop after this
+   block and have the answer.
 
-     | | when |
-     |---|---|
-     | high | one definition, or rank 1 clear of rank 2 by more than about 1.0 of score; endorsed or documented; the owning model is used and fresh |
-     | medium | conflicting but rank 1 leads clearly; or the owning model has little recent usage; or the context was built a while ago |
-     | low | rank 1 and rank 2 within about 0.5 of each other; or the section you matched is a loose fit for the question; or the rank-1 model has no endorsement and no usage at all |
+   **Sources** comes second, under that heading: the measure and its expression, the model
+   and its id, the workspace, the rank out of how many and the score, the query that ran, the
+   row count, the unrounded value if you rounded, and freshness (`built_at` from the file's
+   header, and the model's own latest-date measure if it has one). The one-line conflict note
+   lives here too, never beside the number.
 
-     At **low**, say plainly that the layer cannot separate the top two, and name the rival
-     definition - that is the case where a second expression belongs in the answer. Above
-     that, one line about the conflict is enough.
+   **Confidence** comes last, on one line: high, medium or low, with the reason in one clause
+   beside it - which of the layer's own numbers says so, not a feeling, not a paragraph, and
+   never an argument with the answer you just gave.
 
-   Sources and confidence are provenance for an answer already given, not a hedge around
-   it. Never withhold the number in order to discuss the definitions.
+   | | when |
+   |---|---|
+   | high | one definition, or rank 1 clear of rank 2 by more than about 1.0 of score; endorsed or documented; the owning model is used and fresh |
+   | medium | conflicting but rank 1 leads clearly; or the owning model has little recent usage; or the context was built a while ago |
+   | low | rank 1 and rank 2 within about 0.5 of each other; or the section you matched is a loose fit for the question; or the rank-1 model has no endorsement and no usage at all |
+
+   At **low**, name the rival definition in Sources - that is the case where a second
+   expression belongs in the answer. Above that, one line about the conflict is enough.
+
+   Then stop. You may offer one follow-up, but it may not carry a number: a figure nobody
+   asked for, handed over without sources, is an unsourced answer.
+
+   Sources and confidence are provenance for an answer already given, not a hedge around it.
+   Never withhold the number in order to discuss the definitions.
 
 7. **When no measure covers it, that is the answer.** A term with no definition, or a table
    only listed under its store, has nothing in this tenant that agrees what its number
