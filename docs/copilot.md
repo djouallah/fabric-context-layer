@@ -75,7 +75,9 @@ A contested term returns several rows, ranked 1..n.
 
 ## 2. The agent
 
-In Copilot Studio, published to M365 Copilot:
+In Copilot Studio, published to M365 Copilot. **Ask it to build the agent** rather than
+clicking one together - [copilot/build-the-agent.md](../copilot/build-the-agent.md) is the
+prompt, and the two things it cannot do for you. What it amounts to:
 
 1. Paste [copilot/instructions.md](../copilot/instructions.md) - everything below the `---` -
    into the agent's instructions. Nothing to fill in: the first time it needs them, the agent
