@@ -78,7 +78,9 @@ A contested term returns several rows, ranked 1..n.
 In Copilot Studio, published to M365 Copilot:
 
 1. Paste [copilot/instructions.md](../copilot/instructions.md) - everything below the `---` -
-   into the agent's instructions, with the two GUIDs from step 1 filled in.
+   into the agent's instructions. Nothing to fill in: the agent asks whoever is talking to it
+   for the context model's ids the first time it needs them, because the Power BI connector
+   has no action that lists workspaces or datasets and it cannot find the model on its own.
 2. Add the **Power BI** connector's *Run a query against a dataset* as a tool. Confirm the
    connection is set to user credentials.
 3. Publish.

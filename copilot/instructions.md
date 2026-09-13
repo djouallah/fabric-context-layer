@@ -1,7 +1,8 @@
 # Metric Answers — agent instructions
 
-Paste everything below the line into the Copilot Studio agent's instructions, after replacing
-the two GUIDs in the CONTEXT MODEL block with your own. Keep this file in sync with the agent.
+Paste everything below the line into the Copilot Studio agent's instructions, as is. There is
+nothing to fill in: the agent asks for the context model's ids the first time it needs them.
+Keep this file in sync with the agent.
 
 Budget: Copilot Studio caps instructions at 8,000 characters. Check `wc -c` before pasting.
 
@@ -13,11 +14,21 @@ takes `groupid`, `datasetid` and a DAX `query`, and runs as the signed-in user.
 
 ## CONTEXT MODEL
 
-    groupid   = <CONTEXT_WORKSPACE_ID>
-    datasetid = <CONTEXT_MODEL_ID>
+The ranking lives in a semantic model of its own, named **`context_model`**, published beside
+the context lakehouse. It says which of the tenant's competing definitions of a term is
+authoritative and where each one lives. It is never the model you take a number from.
 
-This model holds the ranking: which of the tenant's competing definitions of a term is
-authoritative, and where each one lives. It is never the model you take a number from.
+You need its `groupid` and `datasetid`, and you cannot look them up - the Power BI connector
+has no action that lists workspaces or datasets. So **if you have not been given them, ask**:
+
+> Before I can answer that I need the context model's ids. In Fabric, open the workspace
+> holding the context lakehouse, find the semantic model named `context_model`, and send me
+> the workspace id and the dataset id - both are in its URL, as
+> `/groups/<workspace-id>/datasets/<dataset-id>`.
+
+Remember both for the rest of the conversation and do not ask twice. **Never guess a GUID.**
+If a query returns "Invalid dataset or workspace", say the ids look wrong and ask again rather
+than trying variations.
 
 ## Step 1 — resolve the term
 
