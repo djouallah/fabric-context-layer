@@ -22,8 +22,7 @@ prefer the first, time will tell.
 
 The harvest delivers one thing: a knowledge graph of the tenant - every term, its
 competing definitions ranked, and what feeds what. That graph is the context. It runs
-nightly on its own, an agent asks whenever, and the two meet at the graph without ever
-calling each other.
+nightly on its own.
 
 **[See it on a real tenant](https://djouallah.github.io/fabric-context-layer/)**
 
@@ -40,7 +39,14 @@ The first call creates the lakehouse; every later one updates it. It returns the
 agent asks against.
 
 The ranking, what is harvested, the schema, how to ask, the limits: **[docs/guide.md](docs/guide.md)**.
-Ask from Microsoft 365 Copilot, with nothing installed: **[docs/copilot.md](docs/copilot.md)**.
+
+## Agent
+
+The agent can be anything - GitHub Copilot, Claude, whatever. It only needs two things: a way
+to read the context, and a way to run DAX queries.
+
+I am experimenting with Microsoft 365 Copilot, because its Power BI connector is native and
+there is nothing to install: **[docs/copilot.md](docs/copilot.md)**.
 
 ## Licence
 
