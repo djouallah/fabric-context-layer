@@ -32,7 +32,6 @@ the way to point it at a context published somewhere else.
 
 ## Inside this repo
 
-A clone of `fabric-context-layer` ships its own `.claude/skills/fabric-context/`, which is
-for **working on the code**, and a project skill wins over a personal one. This one is for
-**asking a question** with nothing installed. They are different jobs, and outside the clone
-only this one is loaded.
+A clone of `fabric-context-layer` ships the same file under `.claude/skills/fabric-context/`,
+byte for byte, so inside the clone there is nothing to install: Claude Code and GitHub
+Copilot load it from there and follow the same protocol as everywhere else.

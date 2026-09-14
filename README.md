@@ -26,7 +26,7 @@ nightly on its own.
 
 **[See it on a real tenant](https://djouallah.github.io/fabric-context-layer/)**
 
-![Inside the platform, the harvest side reads a Fabric workspace, builds and ranks the graph, and publishes it as the context. Outside it, any stateless agent - on a laptop, in a notebook, in CI, in a chat - reads that context as one markdown file, runs rank 1 as DAX on the model that owns it, and answers with the number, its source and a confidence.](docs/how-it-works-dark.svg)
+![Inside the platform, the harvest side reads a Fabric workspace, builds and ranks the graph, and publishes it as the context. Outside it, any stateless agent - on a laptop, in a notebook, in CI, in a chat - asks the context model which definition wins, runs it as DAX on the model that owns it, and answers with the number, its source and a confidence.](docs/how-it-works-dark.svg)
 
 
 ```python

@@ -34,7 +34,7 @@ _REF = re.compile(r"'(terms|definitions|aliases)'\[(\w+)\]")
 # What the install-free side must never ask of the person asking a question, and must never
 # explain either. `client/` is the answering side; the context already exists, and how it came
 # to exist is described in docs/guide.md and nowhere under client/.
-_CLONE = ("git clone", "pip install", "python -m ask", "python -m fabcontext",
+_CLONE = ("git clone", "pip install", "python -m fabcontext",
           "fabcontext", "harvest", "context.md")
 
 

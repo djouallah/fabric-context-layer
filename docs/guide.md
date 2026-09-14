@@ -53,8 +53,7 @@ url = fabcontext.harvest("My Workspace")
 ```
 
 That is the whole interface. The first call creates a lakehouse called `context_layer`; every
-later call updates it. It returns the lakehouse's Tables root, which is what the query side
-takes as `--db`.
+later call updates it. It returns the lakehouse's Tables root.
 
 **Make the workspace first.** The context does not land beside what it describes - it lands at
 a fixed address: a lakehouse called `context_layer`, in a workspace called `context_layer`, on
@@ -141,45 +140,27 @@ SELECT name, owner_item_name, rank, expression
   FROM dbo.definitions WHERE term_id = 'avg-price' ORDER BY rank;
 ```
 
-## Ask it
+## Two deliverables, one client
 
-`--db` is the URL `harvest()` returned; it identifies the lakehouse and is the only thing the
-two halves share. The client is two commands:
+`context.md` and `wiki/`, under the lakehouse's `Files/`, are the context layer in full:
+every term with its ranked definitions and their DAX, every model with the two ids a query
+executes against, column values, lineage, reports, and the long tail named under its store.
+`context.md` is that as one file; `wiki/` is the same as linked pages, and opens in Obsidian.
+They are for a person, or for a capable AI reading a document.
 
-```powershell
-python -m ask --db <url> context              # fetch Files/context.md, the whole graph as one file
-python -m ask dax <ws-guid>/<model-guid> "EVALUATE ROW(\"v\", [<measure>])"
-```
+`context_model`, beside the tables, is what a client reads, and the only thing. It is the
+ranking as a Direct Lake semantic model: one DAX query says which definition of a term wins
+and carries the ids to run it against, and a second runs that measure by name on the model
+that owns it - over a read-only Power BI connection and nothing installed. That is
+[client/](../client/), one folder per tool: Claude, GitHub Copilot, Scout, Microsoft 365
+Copilot. What the model exposes is the ranking, so the client answers *what is X* and *which
+definition wins*, and says plainly that lineage, reports and table detail are in the files
+and out of its reach.
 
-`context.md` is the metadata: every term with its ranked definitions and their DAX, every
-model with the two ids a query executes against, column values, lineage, reports, and the
-long tail named under its store. An agent reads it. One round trip fetches it, it opens no
-Delta table, and the copy lands in `%LOCALAPPDATA%\fabric-context`; `--refresh` re-fetches.
-
-`dax` is the only other call and the only source of a number. It takes the ids straight from
-the file - every model section prints a `run:` line to copy - so running a number looks
-nothing up. `--json` and `--db` are global flags and go before the subcommand.
-
-**There is no SQL here.** A number comes from DAX calling a ranked measure by name, or it
-does not come. A table no semantic model covers has nothing in the tenant that agrees what
-its number means, so the honest answer is to say that and describe what is known, not to
-compute one and imply a definition nobody wrote. That is also why the client needs no
-database driver at all: no duckdb, no deltalake, no DuckDB extension, no pull.
-
-**This is the clone-side path, and it is not the only one.** `python -m ask` needs Python
-3.12, this clone, `pip install -e .` and `az login`, and in exchange it reads the whole graph
-- lineage, reports, tables, profiled column values. The repo ships that protocol as a Claude
-Code skill (`.claude/skills/fabric-context/SKILL.md`); GitHub Copilot loads it from
-`.claude/skills/` too, and `.github/copilot-instructions.md` is the rule that sends tenant
-questions to it.
-
-Anyone who only wants a number installs nothing. The harvest also publishes the ranking as a
-semantic model (`context_model`), so one DAX query says which definition wins and carries the
-ids to run it against, and a second runs it - over a read-only Power BI connection and no
-clone at all. That is [client/](../client/), one folder per tool: Claude, GitHub Copilot, Scout,
-Microsoft 365 Copilot. The trade is what the model exposes: `terms`, `definitions` and
-`aliases` are the ranking, so that side answers *what is X* and *which definition wins*, and
-says plainly that lineage, reports and table detail are out of its reach.
+**There is no SQL and no second route to a number.** A number comes from DAX calling a
+ranked measure by name, or it does not come. A table no semantic model covers has nothing in
+the tenant that agrees what its number means, so the honest answer is to say that and
+describe what is known, not to compute one and imply a definition nobody wrote.
 
 ### The context model
 
@@ -229,23 +210,16 @@ stale copy.
 
 How a question flows:
 
-1. `context` fetches the file; its `## Terms` index and `### term:` sections find the term
-   by any of its spellings.
-2. The ranked table under that term gives every definition with the four signals, the DAX,
-   and the model that owns it. A conflicting term says so.
-3. The model's section gives the tables, columns, relationships and source tables; profiled
-   columns carry their distinct values and ranges, so "NSW" becomes
-   `'<table>'[<column>] = "NSW"` from the data, not from memory.
-4. `dax` runs a query that calls the ranked measure by name through the Power BI
-   executeQueries API, so the governed logic runs rather than a re-derivation of it.
-5. The answer cites the measure, model, rank, score, conflict note and the query that ran.
-
-`python -m ask evals generate` derives a benchmark from the graph (definition, conflict,
-lineage, usage and data questions for the top terms, plus one out-of-scope question). It is
-a maintainer tool and the one thing that still opens the published tables, through
-`ask/db.py`;
-`python -m ask evals run` runs it through Claude Code headless with and without the
-context layer and reports accuracy per class. Nothing in it names a tenant.
+1. The client finds `context_model` by name and asks it for the term, by any of its
+   spellings. The rows that come back are the term's definitions, ranked, each with the
+   measure, the model that owns it, its two ids, the DAX and a confidence. Rank 1 is the
+   answer; a conflicting term says so.
+2. The owning model is asked for its own column names and values - `INFO.VIEW.COLUMNS()` -
+   so "NSW" becomes `'<table>'[<column>] = "NSW"` from the data, not from memory.
+3. The measure runs by name through the Power BI executeQueries API, so the governed logic
+   runs rather than a re-derivation of it.
+4. The answer cites the measure, model, rank, conflict note, confidence and the query that
+   ran.
 
 ## On a schedule
 
@@ -397,17 +371,11 @@ on a report-free workspace definitions are ordered on authority, model usage and
 | `fabcontext/viz.py`, `fabcontext/graph_template.html` | the standalone `graph.html` |
 | `tests/` | the whole pipeline on a synthetic tenant |
 | `docs/fabric-runtime.txt` | what the Fabric Python 3.12 runtime ships; the dependency list rests on it |
-| `ask/context.py` | the client: find the lakehouse, fetch `context.md`. No database driver |
-| `ask/fabric.py` | the only network call that returns a number: DAX on a model |
-| `ask/db.py` | the published tables in DuckDB - read by the benchmark, and by nothing else |
-| `ask/__main__.py` | `python -m ask` |
-| `ask/evals.py` | the generated benchmark and its runner |
-| `.claude/skills/fabric-context/SKILL.md` | in this clone: how Claude Code uses `python -m ask` |
-| `.github/copilot-instructions.md` | in this clone: the rule that sends tenant questions to that skill |
-| `client/SKILL.md` | no clone: the protocol over Power BI alone, installed by Claude, Copilot and Scout alike |
-| `client/<tool>/README.md` | no clone: where each tool wants that file, and how it signs in |
 | `fabcontext/semantic_model.py` | the context's own Direct Lake model - the ranking, queryable as DAX |
+| `client/SKILL.md` | the client protocol over Power BI alone, installed by Claude, Copilot and Scout alike; `.claude/skills/fabric-context/SKILL.md` is its copy for this clone |
+| `client/<tool>/README.md` | where each tool wants that file, and how it signs in |
 | `client/m365/instructions.md` | the M365 Copilot agent's instructions - see [client/m365/](../client/m365/) |
+| `.github/copilot-instructions.md` | in this clone: the rule that sends tenant questions to the skill |
 
 ## Known limits
 

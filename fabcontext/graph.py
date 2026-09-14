@@ -8,9 +8,9 @@ with the weights written down instead of hidden.
 
 The weights are hand-picked, not learned. A popular wrong definition still ranks first.
 
-Everything this file writes is the published side of the contract with ask/: the tables
-nodes, edges, activity, query_usage, query_stats, terms, definitions, aliases, item_usage,
-meta and the views flow, measure_usage, item_views. ask/ reads them and nothing else.
+Everything this file writes is the published side of the contract with the semantic model
+and client/: the tables nodes, edges, activity, query_usage, query_stats, terms, definitions,
+aliases, item_usage, meta and the views flow, measure_usage, item_views.
 
 Nothing is written to disk. `build()` returns an in-memory connection that publish.py
 streams into the lakehouse, and `read_published()` reads those tables back for anything that
@@ -39,7 +39,7 @@ _SCORE = (str(W_AUTHORITY) + " * authority + " + str(W_POPULARITY) + " * popular
 VIEW_WINDOW_DAYS = 28
 FRESHNESS_HALFLIFE_DAYS = 180.0
 
-# Bumped when a published table or column changes shape; ask/ checks it.
+# Bumped when a published table or column changes shape; context.md prints it.
 SCHEMA_VERSION = 5
 
 # Activity families. Views are people opening things; runs and queries are people using

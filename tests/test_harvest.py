@@ -304,15 +304,15 @@ def test_context_md_carries_what_a_dax_call_needs(context_md):
     assert "storage: DirectLake" in section
     assert "#### measure: [Total Revenue] on Sales" in section
     assert "values: NSW, VIC" in section       # filter literals, so nothing is invented
-    # The client has no lookup: the ids `ask dax` takes are copied straight off the page.
-    assert "run: python -m ask dax " + WS + "/" + MODEL_A in section
+    # A number is one copy away: the two ids and the query, on the model's own section.
+    assert "run: DAX on " + WS + "/" + MODEL_A in section
 
 
 def test_context_md_offers_no_route_but_dax(context_md):
     """The file is the metadata; DAX is the only number. Nothing may suggest SQL."""
     assert "ask sql" not in context_md and "select ... from" not in context_md
     assert "**When no measure covers it, say so.**" in context_md
-    assert "python -m ask dax" in context_md
+    assert 'EVALUATE ROW("v", [<measure>])' in context_md
 
 
 def test_context_md_names_the_tail_without_detailing_it(context_md):

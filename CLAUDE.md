@@ -5,13 +5,25 @@ Two sides, one artifact, and the artifact is a Fabric lakehouse:
 - `fabcontext/` is the **harvest side**, and it is a pip package (`pip install fabcontext`).
   It reads Fabric into `raw/`, builds the graph in memory, ranks competing definitions, and
   publishes the result into a lakehouse of its own - then renders `wiki/`, `context.md` and
-  `graph.html` from it. One call: `import fabcontext; url = fabcontext.harvest("My Workspace")`, or
+  `graph.html` from it, and creates the semantic model `context_model` over the ranking. One
+  call: `import fabcontext; url = fabcontext.harvest("My Workspace")`, or
   `python -m fabcontext "My Workspace"`.
-- `ask/` is the **query side**, and it is two commands: `python -m ask context` fetches
-  `Files/context.md` in one round trip, and `python -m ask dax <ws-guid>/<model-guid>
-  "EVALUATE ..."` runs a number. Nothing else. The client opens no database - no duckdb, no
-  deltalake, no cached copy - because the markdown is the metadata and the model ids are in
-  it. The URL `harvest()` returned is the entire contract between the two.
+- `client/` is the **client side**, and it is a protocol, not code: one DAX query against
+  `context_model` says which definition of a term wins and which model owns it, a second runs
+  that measure by name on the owning model. It installs nothing and needs a read-only Power
+  BI connection. `client/SKILL.md` is that protocol for any agent with a shell - Claude,
+  Copilot, Scout - and `client/m365/instructions.md` is the same protocol for a Copilot Studio
+  agent. `.claude/skills/fabric-context/SKILL.md` is a copy of the skill, so Claude Code in
+  this clone follows the same protocol; `tests/test_skill.py` keeps the copy identical.
+
+**Two deliverables, one client path.** `context.md` and `wiki/` are the context layer in
+full - every published column, every competing definition, every DAX expression - for a
+person, or a capable AI reading a document. `context_model` is what a client reads, and the
+only thing: the ranking, curated. There is no other client path - no CLI, no fetch of the
+markdown, no SQL, no database driver. A number comes from DAX calling a ranked measure by
+name, or it does not come: a table no semantic model covers has nothing in the tenant that
+agrees what its number means, so the answer is to say that, not to compute one and imply a
+definition nobody wrote.
 
 **The repo holds Python and no data.** One lakehouse holds everything: the ranked graph as
 Delta tables under `Tables/`, and `raw/`, `build/`, `wiki/` and `graph.html` under `Files/`.
@@ -54,9 +66,9 @@ stays in `raw/`; only counts are published (`query_usage`, `query_stats`).
 There is no deployer or scheduler. Put the two cells in a notebook and schedule that notebook
 from Fabric.
 
-Questions about the tenant's terms, models, tables, lineage, usage or numbers go through the
-`fabric-context` skill (`.claude/skills/fabric-context/SKILL.md`), which uses `python -m ask`.
-Do not answer such questions from memory or by reading `raw/` directly.
+Questions about the tenant's terms, models or numbers go through the `fabric-context` skill
+(`.claude/skills/fabric-context/SKILL.md`), the client protocol over `context_model`. Do not
+answer such questions from memory or by reading `raw/` directly.
 
 **Release rule, no exceptions:** a new version of `fabcontext` bumps **only the last digit**
 - 0.1.0 -> 0.1.1 -> 0.1.2. Never the middle number, never the first. Set it in both
@@ -74,8 +86,9 @@ Working on the code: `pytest` runs the harvest end to end on a synthetic tenant,
 to a temp folder so it needs no network, and must stay green. Use a venv built from
 `requirements-dev.txt`, which pins duckdb and deltalake to the Fabric versions - a laptop
 otherwise resolves newer ones and the suite stops saying anything about production.
-`tests/test_publish.py` carries the published column contract, copied from `ask/db.py`;
-it must stay satisfied after any change to what `fabcontext/graph.py` publishes.
+`tests/test_publish.py` carries the published column contract - the columns the semantic
+model and `client/` read; it must stay satisfied after any change to what
+`fabcontext/graph.py` publishes.
 
 `pytest` means the offline suite and must keep meaning it - `addopts` in `pyproject.toml`
 deselects the `tenant` marker. The one marked test, `tests/integration/test_release_gate.py`,
@@ -85,12 +98,3 @@ GitHub workload-identity federation - `github_oidc_token` in `_fabric/auth.py`, 
 stored - so a release cannot reach PyPI without a harvest of a real tenant having succeeded.
 That gate exists because an offline suite stayed green while the first real lakehouse create
 400'd: anything that only fails against Fabric has to be covered there or not at all.
-`--json` is a global flag on `python -m ask` and goes before the subcommand.
-
-**There is no SQL on the client, and adding one would undo the point.** A number comes from
-DAX calling a ranked measure by name, or it does not come. A table no semantic model covers
-has nothing in the tenant that agrees what its number means, so the answer is to say that
-and describe what is known - not to compute it and imply a definition nobody wrote. The
-published tables are still read by `ask/db.py`, but only so `ask/evals.py` can build its
-benchmark questions out of the graph; `tests/test_client_is_thin.py` is the gate that keeps
-that off the client.

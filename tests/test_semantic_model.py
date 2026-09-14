@@ -102,6 +102,18 @@ def test_definition_parts_carry_both_files_as_base64(con):
         json.loads(base64.b64decode(part["payload"]).decode("utf-8"))
 
 
+def test_the_ids_come_out_of_the_address_harvest_returned():
+    """The model can be built over a lakehouse published long ago, with no state on the
+    machine - so both ids must be recoverable from the URL alone."""
+    import pytest
+
+    url = "abfss://" + WS + "@onelake.dfs.fabric.microsoft.com/" + LH + "/Tables"
+    assert sm.ids_from_url(url) == (WS, LH)
+    assert sm.ids_from_url(WS + "/" + LH) == (WS, LH)
+    with pytest.raises(ValueError):
+        sm.ids_from_url("C:/somewhere/copy.duckdb")
+
+
 def test_a_local_store_creates_nothing(con):
     """The offline suite must stay offline: no workspace, no call, no failure."""
     class _Local:

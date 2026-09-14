@@ -1,147 +1,268 @@
 ---
 name: fabric-context
-description: Answer questions about the harvested Microsoft Fabric tenant - business terms and their competing definitions, semantic models, tables, lineage, usage, and numbers computed from the models - using the context layer through `python -m ask`. Use for any question about a measure, a metric, a table, a report, a notebook, what feeds what, or "what is/was <metric> for <filter>".
+description: Answer a business-metric question with a single number taken from the tenant's ranked definitions - "what is revenue", "what was <metric> for <filter>", "which definition of <term> should I trust". Resolves the term against the published context model, takes the top-ranked definition, and runs that measure by name as DAX on the model that owns it.
 ---
 
-# Answering from the Fabric context layer
+# Answering from the context layer
 
-The harvest side (`fabcontext`) has already read the tenant, ranked every competing
-definition, and published the result into a Fabric lakehouse of its own; `--db` says which.
-You have exactly two commands:
+A semantic model named **`context_model`** holds every competing definition of every business
+term, ranked. You answer by asking it which definition wins, then running the winning measure
+on the model that owns it.
 
+**Nothing is installed and nothing is cloned.** The Azure CLI signed in (`az login`) is the
+whole setup - the model is at a fixed address, so you find it rather than being handed it.
+
+## Finding the context model
+
+It lives at a fixed address: a semantic model named `context_model`, in a workspace named
+`context_layer`. That is true in every tenant, which is why you can find it yourself rather
+than asking for it.
+
+If `$FABRIC_CONTEXT_MODEL` is set it already holds both ids as `<workspace-guid>/<model-guid>`
+- use it and skip the rest. Otherwise, two calls.
+
+The workspace:
+
+```bash
+az rest --method get --resource "https://analysis.windows.net/powerbi/api" \
+  --url "https://api.powerbi.com/v1.0/myorg/groups?\$filter=name%20eq%20'context_layer'"
 ```
-python -m ask context                  # fetch Files/context.md and print its path
-python -m ask dax <ws-guid>/<model-guid> "EVALUATE ..."
+
+The workspace guid is `value[0].id`. If the filter is rejected, drop it and list `/groups`
+unfiltered, then pick the row whose `name` is exactly `context_layer` yourself.
+
+Then the model, in that workspace:
+
+```bash
+az rest --method get --resource "https://analysis.windows.net/powerbi/api" \
+  --url "https://api.powerbi.com/v1.0/myorg/groups/<ws-guid>/datasets"
 ```
 
-`context.md` is the whole graph as one markdown file. It is the metadata - every term, its
-ranked definitions and their DAX, every model with the two ids a query executes against,
-column values, lineage, who writes what. **You read it.** `dax` is the only other thing you
-run, and the only source of a number. There is no SQL, no search command and no metadata
-query: if the file does not say it, it is not known.
+Take the row whose `name` is `context_model`; its `id` is the model guid. That workspace holds
+the context layer and nothing else, so the list is short.
 
-Everything you cite comes from the file or from the query you ran, never from memory.
+Remember both ids for the rest of the conversation and do not look them up twice.
 
-## Where it runs
+When the lookup comes back empty, say so and stop - do not go looking through other
+workspaces:
 
-Python 3.12 and a clone of this repo, with the commands run from the clone's root: `ask/` is
-not an installed package. If the working directory is not the clone, ask once where it is.
-There, `pip install -e .` once. `az login` is where the Power BI token comes from; with no
-login available, say so and stop - do not set up credentials. `--db` is global and goes
-before the subcommand: when `context` exits 2 with "nothing published yet", ask for the
-`abfss://` URL `fabcontext.harvest()` returned or `<ws-guid>/<lakehouse-guid>` and pass it to
-`context`; `dax` takes its ids from the file and needs none. Never search the machine for
-it, and never run `python -m fabcontext` to make one.
+- **No workspace named `context_layer`** - the context layer has not been published in this
+  tenant, or this account cannot see it.
+- **The workspace is there but holds no `context_model`** - the ranking is published but the
+  model over it was never created. Say that it is missing and that whoever publishes the
+  context has to add it. There is nothing else here for you to read, and no second route.
 
-## Protocol
+`context_layer` is the one workspace name you look up. If you are pointed at some other
+workspace by name, say you cannot look a name up and ask for the model's link instead.
 
-1. **Fetch it, once per conversation**: `python -m ask context`. It prints a path; read that
-   file. On a big tenant read the header and "How to use this file" first, then grep for the
-   section you need - `### term:`, `### model:`, `### report:`, `### store:`. If the command
-   says nothing is published, ask for `--db` (see Where it runs) and stop; do not run the
-   harvest side.
+**Never guess or construct a GUID.** If a query answers "Invalid dataset or workspace", say
+the ids look wrong and check them again rather than trying variations.
 
-2. **Find the term.** Terms are indexed in the `## Terms` table at the top and detailed as
-   `### term: <term_id>` below. Check the `also known as` line - a term merges its
-   spellings. If no section covers the question's nouns, say the harvested context has
-   nothing for it, name the nearest sections, and stop. Do not guess.
+## The one command
 
-3. **Take rank 1.** The ranked table under a term is the answer, top row. The four signals
-   have already weighed authority, popularity, relevance and freshness; that is what the
-   layer is for. Take rank 1 and go on - unless the question names a model or workspace, in
-   which case take that one.
+Every query - against the context model and against the model that owns a measure - is the
+same call with different ids. Write the DAX to a file; do not inline it. The body is JSON and
+the DAX inside it is a JSON string, so every `"` in the query becomes `\"`, and getting that
+wrong inline is the easiest way here to send a query you did not mean.
 
-   A conflict does not change the pick, only the disclosure - and the disclosure goes in
-   Sources (step 6), never beside the number. When the term says `conflicting: yes`, one
-   line there: which measure you used, which model it lives in, its rank out of how many,
-   and that the others differ. Do not lay the competing expressions out, do not invite the
-   reader to choose, and never end by saying the number would be different under another
-   definition.
+```bash
+cat > query.json <<'EOF'
+{"queries":[{"query":"EVALUATE ROW(\"v\", [Total Revenue])"}]}
+EOF
 
-4. **Write DAX that calls that measure by name**, never re-derives its logic:
+az rest --method post --resource "https://analysis.windows.net/powerbi/api" \
+  --url "https://api.powerbi.com/v1.0/myorg/groups/<ws-guid>/datasets/<model-guid>/executeQueries" \
+  --headers "Content-Type=application/json" --body @query.json
+```
 
-   ```
-   EVALUATE ROW("v", CALCULATE([<measure>], '<table>'[<column>] = "<value>"))
-   EVALUATE TOPN(20, SUMMARIZECOLUMNS('<table>'[<column>], "v", [<measure>]), [v], DESC)
-   ```
+Rows come back under `results[0].tables[0].rows`, keyed by the names you gave in
+`SELECTCOLUMNS` or `ROW`, in square brackets: `"[measure]"`, `"[v]"`.
 
-   One `EVALUATE` per call. Keep result sets small (`TOPN`, `--max-rows`). Filter literals
-   come from the `values:` on a column in the model's section. When a column has none, one
-   more DAX call fetches them: `EVALUATE TOPN(50, VALUES('<table>'[<column>]))`. **Never
-   invent a literal.**
+An error comes back as `ERROR: Bad Request(...)` carrying a `DetailsMessage`. Read that
+message - it says whether the model is unreachable, the measure does not exist, or the query
+is malformed.
 
-5. **Run it**: copy the `run:` line from the model's section for the ids, then
-   `python -m ask dax <ws-guid>/<model-guid> "<query>"`. On an error, fix the query and
-   retry at most twice, then report the error text verbatim.
+## Step 1 - resolve the term
 
-6. **Answer in three blocks, in this order.** Nothing from a later block may appear in an
-   earlier one.
+Take the business noun from the question, lowercase it, and run this against the **context
+model**:
 
-   **The number** comes first and alone: its value, unit and period, then stop. Round it to
-   what a person reads - 1.37 billion MWh, not 1,374,388,307.9978 - and keep the exact figure
-   for Sources. If the question asked for a breakdown, this block is the table. No measure
-   name, no model, no id, no rank, no caveat here; the reader must be able to stop after this
-   block and have the answer.
+```dax
+EVALUATE
+CALCULATETABLE(
+    SELECTCOLUMNS('definitions',
+        "rank", 'definitions'[rank],
+        "measure", 'definitions'[name],
+        "model", 'definitions'[owner_item_name],
+        "workspace_id", 'definitions'[workspace_id],
+        "model_id", 'definitions'[owner_item_id],
+        "table", 'definitions'[table_name],
+        "expression", 'definitions'[expression],
+        "score", 'definitions'[score],
+        "confidence", 'definitions'[confidence]),
+    'aliases'[alias_norm] = "<term>")
+```
 
-   **Sources** comes second, under that heading: the measure and its expression, the model
-   and its id, the workspace, the rank out of how many and the score, the query that ran, the
-   row count, the unrounded value if you rounded, and freshness (`built_at` from the file's
-   header, and the model's own latest-date measure if it has one). The one-line conflict note
-   lives here too, never beside the number.
+`aliases` holds every spelling of every term, which is what lets the user's own wording land.
+If that returns nothing, try the label instead:
 
-   **Confidence** comes last, on one line: high, medium or low, with the reason in one clause
-   beside it - which of the layer's own numbers says so, not a feeling, not a paragraph, and
-   never an argument with the answer you just gave.
+```dax
+    'terms'[label] = "<term>"
+```
 
-   | | when |
-   |---|---|
-   | high | one definition, or rank 1 clear of rank 2 by more than about 1.0 of score; endorsed or documented; the owning model is used and fresh |
-   | medium | conflicting but rank 1 leads clearly; or the owning model has little recent usage; or the context was built a while ago |
-   | low | rank 1 and rank 2 within about 0.5 of each other; or the section you matched is a loose fit for the question; or the rank-1 model has no endorsement and no usage at all |
+and if still nothing, widen once to see what the layer does know:
 
-   At **low**, name the rival definition in Sources - that is the case where a second
-   expression belongs in the answer. Above that, one line about the conflict is enough.
+```dax
+EVALUATE TOPN(15, SELECTCOLUMNS('terms', "term", 'terms'[label],
+    "n", 'terms'[n_definitions]), 'terms'[n_definitions], DESC)
+```
 
-   Then stop. You may offer one follow-up, but it may not carry a number: a figure nobody
-   asked for, handed over without sources, is an unsourced answer.
+then say the term is not defined here, name the nearest terms you saw, and stop. **Do not
+compute anything for a term with no definition** - nothing in this tenant agrees what its
+number means, and inventing one is exactly what this layer exists to prevent.
 
-   Sources and confidence are provenance for an answer already given, not a hedge around it.
-   Never withhold the number in order to discuss the definitions.
+## Step 2 - take rank 1
 
-7. **When no measure covers it, that is the answer.** A term with no definition, or a table
-   only listed under its store, has nothing in this tenant that agrees what its number
-   means. Say that plainly, then give what the file does know: the columns and their
-   profiled values, who writes the table, what reads it, which tier it is in. Do not compute
-   it another way - there is no other way here, and inventing one would invent the
-   definition this layer exists to find.
+The row with `rank` = 1 is the answer. The ranking is already decided and is not yours to
+redo. Take it and move on.
 
-   Tier is the same signal: **1** feeds a semantic model, **2** is read or written by a
-   notebook or pipeline, **3** is harvested and nothing in these workspaces refers to it. A
-   tier-3 table is a describe-only answer by definition.
+Take a different row **only** when the user named a model or workspace, in which case take
+theirs.
 
-## Metadata questions
+Never present the list and ask the user to choose. That is a non-answer.
 
-All of these are read out of `context.md`; none of them run anything.
+## Step 3 - get the real column names
 
-- *Where is X defined, which should I trust?* - `### term: <x>`, top row of its table.
-- *Do the definitions of X agree?* - the `conflicting:` field; answer yes or no first, then
-  the expressions from the `#### <rank>.` blocks.
-- *What feeds X?* - the `upstream:` line on the term, and the `### notebook:` /
-  `### pipeline:` sections that write the tables it names.
-- *Which reports use X?* - the `used in reports:` line on the term, and `fields used:` on
-  each `### report:`.
-- *What is in table T?* - `#### table:` under its `### store:`. A table named only in a
-  store's `not referenced` list was harvested and nothing reads it.
+Skip this when the question needs no filter and no breakdown: `EVALUATE ROW("v", [<measure>])`
+names no column, so there is nothing to look up.
+
+Otherwise, ask the **owning** model what it contains - the rank-1 row's `workspace_id` and
+`model_id`, the same ids you are about to run the number on:
+
+```dax
+EVALUATE INFO.VIEW.COLUMNS()
+```
+
+One row per column in the model. **Read the table and column names out of the response's own
+headers** rather than assuming what those headers are called, then pick the pair that matches
+what the user asked to filter or group by and use it verbatim. If the model is large enough
+that the response is unwieldy, re-run it filtered, using the header names you just learned.
+
+If that query errors, fall back to:
+
+```dax
+EVALUATE COLUMNSTATISTICS()
+```
+
+which names the table and column directly and carries min/max as well - but it scans the
+model, so it is the second choice, not the first.
+
+**Never take a table or column name from the measure's `expression` text.** The expression
+names what the measure reads, not what you may filter or group by, and the two are routinely
+different. A column inferred from DAX you read is a guess, and this is the guess that fails.
+
+## Step 4 - run the number
+
+Use the rank-1 row's `workspace_id` and `model_id` in the URL - **not the context model's
+ids** - and call the measure by name:
+
+```dax
+EVALUATE ROW("v", [<measure>])
+```
+
+With a filter:
+
+```dax
+EVALUATE ROW("v", CALCULATE([<measure>], '<table>'[<column>] = "<value>"))
+```
+
+Over a breakdown:
+
+```dax
+EVALUATE TOPN(20, SUMMARIZECOLUMNS('<table>'[<column>], "v", [<measure>]), [v], DESC)
+```
+
+Rules for this query:
+
+- **Call the measure by name. Never re-derive its logic.** If a measure exists, `[Measure]` is
+  the answer; a SUM or DIVIDE you wrote yourself is a different definition wearing its name.
+- One `EVALUATE` per call. Keep results small - use `TOPN`.
+- **Never invent a filter literal.** If you are not certain a value exists, fetch it first, on
+  the same model:
+
+  ```dax
+  EVALUATE TOPN(50, VALUES('<table>'[<column>]))
+  ```
+
+  A wrong literal returns a plausible wrong number with no error, which is the worst failure
+  available here.
+- On an error, fix the query and retry at most twice, then report the error text verbatim.
+  A rejected table or column name is not one of those errors: it means step 3 was skipped, or
+  its answer was overridden by a guess. Run the discovery query and try again.
+
+## Step 5 - answer
+
+Three blocks, in this order. Nothing from a later block may appear in an earlier one.
+
+**1. The number.** Its value, unit and period - then stop. Round it to what a person reads
+(1.37 billion MWh, not 1,374,388,307.9978); the exact figure goes in Sources. If the question
+asked for a breakdown, this block is the table. No measure name, no model, no GUID, no rank
+and no caveat here: the reader must be able to stop after this block and have the answer.
+
+**2. Sources**, under that heading:
+
+- the measure and the model it came from;
+- its rank out of how many definitions, and the score, to two decimals;
+- the DAX you ran, verbatim, so it can be checked;
+- the unrounded value, if you rounded.
+
+If more than one row came back in step 1, say so **here**, in one line: which measure you
+used, which model it lives in, and that the others differ. Not beside the number. Do not lay
+the rival expressions out, do not invite the reader to choose, and never close by saying the
+number would be different under another definition.
+
+**3. Confidence**, on the last line: `Confidence: high | medium | low` with the reason in one
+clause beside it. Not a paragraph, and never an argument with the answer you just gave.
+
+Take it from the row's own `confidence`; do not re-derive it by comparing `score` values
+yourself.
+
+Drop it one level if the term you matched is a loose fit for what was asked - that is a
+property of the question, which the row cannot know. At low, name the rival definition in
+Sources - that is the one case where a second expression belongs in the answer.
+
+Then stop. You may offer one follow-up, but it may not carry a number: a figure nobody asked
+for, handed over without sources, is an unsourced answer.
+
+Sources and confidence are provenance for an answer you already gave, not a hedge around it.
+Never withhold the number in order to discuss definitions.
+
+## What this cannot answer
+
+`context_model` carries three tables - `terms`, `definitions` and `aliases` - and nothing
+else. Lineage (*what feeds X*), which reports use a measure, and how
+often one is queried are **not reachable here**. When a question needs one of those, say
+plainly that it is outside what the context model exposes, and stop. Do not substitute a
+guess, and do not go looking for another source.
+
+A model's own structure is the exception, and it does not come from `context_model` at all: the
+columns come from the owning model in step 3, and a filter literal from `VALUES()` on that same
+model in step 4. Both are questions a model can answer about itself.
 
 ## Never
 
+- Never state a number you did not get back from a query.
+- Never answer a metric question from your own knowledge, or from the measure's expression
+  text. Run it.
+- Never use the context model to compute a business number. It holds metadata only.
+- Never guess a workspace or model GUID. Both come from step 1.
+- Never ask the user for a table or column name before running step 3. The model knows its own
+  columns; asking the person who asked you is a non-answer.
 - Never re-derive a number a measure already defines. A measure exists -> call it by name.
 - Never compute a number for something no measure covers. Say so instead.
-- Never run the harvest side (`python -m fabcontext ...`), never write files, never read the
-  harvested JSON in `Files/raw` - reading it is exactly what this layer replaces.
-  `context.md` is the rendered context, not that JSON; reading it is the point.
-- Never answer a number without having run it.
-- Never refuse to pick between definitions. The ranking is the layer's job; hand back rank
-  1, sourced, with a confidence. "Here are three definitions, you choose" is a non-answer.
-- Never pick silently either: the one-line conflict note and the confidence are the
-  disclosure, and at low confidence the rival definition is named.
+- Never refuse to pick between definitions. The ranking is the layer's job; hand back rank 1,
+  sourced, with a confidence. "Here are three definitions, you choose" is a non-answer.
+- Never pick silently either: the one-line conflict note and the confidence are the disclosure.
+- **Never clone a repository, never `pip install` anything, and never try to build the
+  context yourself.** It already exists. If the context model cannot be reached, say so and
+  stop.

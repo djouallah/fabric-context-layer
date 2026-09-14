@@ -10,7 +10,7 @@ text{font-family:'Segoe Print','Bradley Hand','Comic Sans MS','Chalkboard SE',cu
 <rect x='0' y='0' width='980' height='476' rx='14' fill='#1f1f1f'/>
 <text x='60.0' y='34.0' font-size='17' text-anchor='start' class='ink' transform='rotate(-0.6 60.0 34.0)'>harvest side</text>
 <text x='178.0' y='34.0' font-size='14' text-anchor='start' class='soft'>- runs on its own, nightly</text>
-<text x='560.0' y='34.0' font-size='17' text-anchor='start' class='ink' transform='rotate(0.5 560.0 34.0)'>query side</text>
+<text x='560.0' y='34.0' font-size='17' text-anchor='start' class='ink' transform='rotate(0.5 560.0 34.0)'>client side</text>
 <text x='662.0' y='34.0' font-size='14' text-anchor='start' class='soft'>- anywhere, when asked</text>
 <path class='sb' d='M43.6 49.3 L139.5 48.6 L234.1 49.6 L327.6 50.0 L423.1 49.9'/>
 <path class='sb' d='M425.0 49.1 L425.1 151.3 L422.9 252.8 L423.4 357.0 L423.4 458.2'/>
@@ -83,7 +83,7 @@ text{font-family:'Segoe Print','Bradley Hand','Comic Sans MS','Chalkboard SE',cu
 <path class='s' d='M739.5 205.3 L734.8 194.0'/>
 <path class='s' d='M740.7 206.3 L747.1 194.4'/>
 <path class='s' d='M739.6 205.9 L746.9 194.8'/>
-<text x='754.0' y='186.0' font-size='13' text-anchor='start' class='soft'>python -m ask</text>
+<text x='754.0' y='186.0' font-size='13' text-anchor='start' class='soft'>DAX</text>
 <path class='s' d='M579.5 208.9 L688.2 208.2 L792.5 209.5 L899.6 207.7'/>
 <path class='s' d='M579.0 207.8 L686.6 208.0 L792.4 208.0 L899.0 207.5'/>
 <path class='s' d='M899.2 207.8 L898.5 221.1 L899.4 236.5 L900.2 252.1'/>
@@ -92,7 +92,7 @@ text{font-family:'Segoe Print','Bradley Hand','Comic Sans MS','Chalkboard SE',cu
 <path class='s' d='M899.3 252.0 L793.3 253.1 L687.6 253.0 L580.2 252.8'/>
 <path class='s' d='M580.4 252.4 L579.1 235.8 L578.8 222.2 L579.2 208.7'/>
 <path class='s' d='M580.1 252.3 L580.4 237.9 L580.0 221.1 L580.6 208.5'/>
-<text x='740.0' y='237.0' font-size='16' text-anchor='middle' class='ink'>read context.md  →  rank 1</text>
+<text x='740.0' y='237.0' font-size='16' text-anchor='middle' class='ink'>ask context_model  →  rank 1</text>
 <path class='ss' d='M578.5 234.6 Q473.8 282.2 404.8 371.2'/>
 <path class='ss' d='M576.6 235.2 Q473.8 282.2 404.7 371.1'/>
 <path class='ss' d='M404.5 373.0 L406.6 358.6'/>

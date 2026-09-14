@@ -641,11 +641,10 @@ The absence of a page means nothing in these workspaces refers to it, not that i
   the DAX. Follow the wikilinks: a measure links to its model page, a model to the tables
   it reads, a table to the notebook that writes it. `index.md` lists what was harvested
   and every term with a conflict.
-- **Asking**: the same facts, from the database these pages were rendered from, through
-  `context.md`, the same context as one file: `python -m ask context` fetches it, and
-  `python -m ask dax <workspace_id>/<item_id> "<EVALUATE ...>"` runs the ranked
-  definition against its model. Those two are the whole client. In Claude Code the
-  `fabric-context` skill drives them.
+- **Asking**: the same ranking, as a semantic model named `context_model` beside these
+  files. One DAX query over it says which definition of a term wins and which model owns
+  it; a second runs that measure by name on the owning model. That is the whole client,
+  and it needs nothing here.
 
 ## What the ranking means
 
@@ -679,10 +678,10 @@ picking one.
 - *Where is X defined and which definition should I trust?* - `terms/<x>.md`, or
   the `### term:` section of `context.md`: quote the top expression, then say whether
   the others disagree.
-- *Which reports use X?* - the "Used in reports" table on the term page, or `usage`.
-- *What feeds X?* - the "Upstream" list on the term page, or `lineage`.
-- *What is X for <filter>?* - `model` for the schema and filter values, then `dax` calling
-  the ranked measure by name. Only the query side does this; the pages hold no numbers.
+- *Which reports use X?* - the "Used in reports" table on the term page.
+- *What feeds X?* - the "Upstream" list on the term page.
+- *What is X for <filter>?* - the pages hold no numbers. Run the ranked measure by name as
+  DAX on the model that owns it; the model page carries its ids.
 """.format(terms=n_terms, conf=n_conf, tail=n_tail)
     write_text(os.path.join(w.out, "CLAUDE.md"), text)
 
@@ -748,10 +747,10 @@ def _refs(w: Wiki, nids) -> str:
 def _context_page(w: Wiki, con, path: str) -> int:
     """The whole context as one markdown file. Returns its size in bytes.
 
-    Same facts as the wiki, addressed to a different reader. An agent that can read this
-    file needs the query side for one thing only: `ask dax`, for a number. There is no
-    other route - a table no model covers is described here and computed nowhere. The
-    long tail is named but not detailed; see `Wiki.is_tail`.
+    Same facts as the wiki, addressed to a different reader - a person, or an AI reading a
+    document. It holds no number: one comes from DAX on the model that owns the ranked
+    measure, and from nowhere else - a table no model covers is described here and computed
+    nowhere. The long tail is named but not detailed; see `Wiki.is_tail`.
     """
     lines: List[str] = []
     meta = dict(con.execute("SELECT key, value FROM meta").fetchall())
@@ -830,12 +829,13 @@ referencing it, plus an exact name match) and **freshness**. Take rank 1 and say
 it in one line - which definition you used and that the others differ - rather than handing
 back a menu.
 
-**This file holds no numbers.** To compute one, copy the `run:` line from the model's
-section - it already carries the two ids - and call the ranked measure by name:
+**This file holds no numbers.** To compute one, run DAX on the model that owns the ranked
+measure - its section carries `workspace_id` and `item_id`, the two ids a query executes
+against - and call the measure by name:
 
-    python -m ask dax <workspace_id>/<item_id> "EVALUATE ROW(\\"v\\", [<measure>])"
+    EVALUATE ROW("v", [<measure>])
 
-That is the only other thing to run. Filter literals come from the `values:` on a column;
+That is the only route to a number. Filter literals come from the `values:` on a column;
 when a column has none, one more DAX query fetches them:
 `EVALUATE TOPN(50, VALUES('<table>'[<column>]))`. Never invent a literal.
 
@@ -965,10 +965,9 @@ def _context_models(w: Wiki, con) -> List[str]:
                   + " | views 28d: " + str(w.views.get(node.get("item_id"), 0)), ""]
         if node.get("description"):
             lines += [str(node["description"]).replace("\n", " "), ""]
-        # The two ids in the order `ask dax` takes them, so a number is one copy away.
-        lines += ["run: python -m ask dax " + _dash(w._workspace_id(node)) + "/"
-                  + _dash(node.get("item_id"))
-                  + ' "EVALUATE ROW(\\"v\\", [<measure>])"', ""]
+        # The two ids a DAX call executes against, and the call, so a number is one copy away.
+        lines += ["run: DAX on " + _dash(w._workspace_id(node)) + "/" + _dash(node.get("item_id"))
+                  + ' - EVALUATE ROW("v", [<measure>])', ""]
         lines += _context_model_tables(w, nid)
         for row in measures.get(node.get("item_id"), []):
             lines += ["#### measure: [" + str(row[1]) + "] on " + str(row[2]), "",

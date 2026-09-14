@@ -103,7 +103,7 @@ def build(dark):
     # column titles
     out.append(text(60, 34, "harvest side", 17, rot=-0.6))
     out.append(text(178, 34, "- runs on its own, nightly", 14, cls="soft"))
-    out.append(text(560, 34, "query side", 17, rot=0.5))
+    out.append(text(560, 34, "client side", 17, rot=0.5))
     out.append(text(662, 34, "- anywhere, when asked", 14, cls="soft"))
 
     # the platform boundary: everything the harvest touches is within it
@@ -148,11 +148,11 @@ def build(dark):
 
     # D -> E
     paths(arrow(r, 740, 156, 740, 206, bend=-4))
-    out.append(text(754, 186, "python -m ask", 13, cls="soft"))
+    out.append(text(754, 186, "DAX", 13, cls="soft"))
 
     # E: search -> define -> rank 1
     paths(rough_rect(r, 580, 208, 320, 44))
-    out.append(text(740, 237, "read context.md  →  rank 1", 16, anchor="middle"))
+    out.append(text(740, 237, "ask context_model  →  rank 1", 16, anchor="middle"))
 
     # E -> C  (reads)
     paths(arrow(r, 578, 236, 404, 372, bend=28), "ss")

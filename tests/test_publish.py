@@ -1,10 +1,10 @@
 """Publishing, reading back, and moving files - against a local folder, so the real Delta
 writer and the real push run with no tenant in sight.
 
-The column contract below is copied from the query side (`ask/context.py`). It is the actual
-interface between the two halves: an agent asks for a definition and gets a rank, a score and
-a dataset id to execute against. Breaking it is the one change here that silently breaks
-something else, so it is asserted rather than assumed.
+The column contract below is the interface between the two halves: the semantic model and
+the client's queries name these columns, and an agent asks for a definition and gets a rank,
+a score and a dataset id to execute against. Breaking it is the one change here that
+silently breaks something else, so it is asserted rather than assumed.
 """
 import os
 
@@ -211,33 +211,6 @@ def test_the_whole_second_half_runs(tmp_path):
     assert len(store.list("wiki")) > 10
     assert os.path.isfile(os.path.join(store.root, "graph.html"))
     assert os.path.isfile(os.path.join(store.root, "context.md"))
-
-
-def test_ask_finds_context_md_beside_the_tables(tmp_path):
-    """The query side fetches the one file out of Files/ without opening a Delta table -
-    the whole point of it, so the address it derives is worth pinning."""
-    from ask import context as ctx
-    from fabcontext import build_and_publish
-    from fabcontext._fabric import LocalStore
-    from tests import fixtures
-
-    work = tmp_path / "work"
-    (work / "raw").mkdir(parents=True)
-    fixtures.make_raw(str(work / "raw"))
-    store = LocalStore(str(tmp_path / "lakehouse"))
-    build_and_publish(str(work), store, profile=False, wiki=True, log=lambda *_a, **_k: None)
-
-    out = ctx.context_file(store.tables_root)
-    assert out["path"] == os.path.join(store.root, "context.md")
-    assert out["bytes"] > 2000
-
-    ws, item = ctx.lakehouse_ids(
-        "abfss://" + fixtures.WS + "@onelake.dfs.fabric.microsoft.com/" + fixtures.LH
-        + "/Tables")
-    assert (ws, item) == (fixtures.WS, fixtures.LH)
-    assert ctx.lakehouse_ids(fixtures.WS + "/" + fixtures.LH) == (fixtures.WS, fixtures.LH)
-    with pytest.raises(ctx.NotFound):
-        ctx.context_file(str(tmp_path / "copy.duckdb"))
 
 
 def test_the_default_target_does_not_depend_on_what_was_harvested():

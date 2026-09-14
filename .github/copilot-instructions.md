@@ -1,32 +1,27 @@
 # fabric-context-layer
 
 `fabcontext/` harvests a Microsoft Fabric tenant, ranks every competing definition of every
-business term, and publishes the result into a lakehouse of its own. `ask/` is the query side,
-and it is two commands: `python -m ask context` fetches the whole context as one markdown
-file, and `python -m ask dax <ws-guid>/<model-guid> "EVALUATE ..."` runs a number. The repo
-holds Python and no data.
+business term, publishes the result into a lakehouse of its own and creates a semantic model,
+`context_model`, over the ranking. `client/` is the client side: one DAX query against that
+model says which definition wins, a second runs it. The repo holds Python and no data.
 
 ## Questions about the tenant
 
-Any question about the tenant's terms, models, tables, reports, lineage, usage or numbers -
-"what is revenue", "what was <metric> for <filter>", "what feeds X" - goes through the
-`fabric-context` Agent Skill, which is loaded on its own from `.claude/skills/`. It is the
-protocol: fetch the context, find the term, take rank 1, call that measure by name in DAX,
-answer number-first with sources and a confidence. Follow it as loaded; do not paraphrase it
-from memory.
+Any question about the tenant's terms, models or numbers - "what is revenue", "what was
+<metric> for <filter>", "which definition should I trust" - goes through the `fabric-context`
+Agent Skill, loaded on its own from `.claude/skills/`. It is the client protocol: find
+`context_model`, ask it which definition wins, call that measure by name in DAX on the model
+that owns it, answer number-first with sources and a confidence. Follow it as loaded; do not
+paraphrase it from memory.
 
 - Never answer such a question from memory, from `Files/raw`, or by adding SQL. A number
-  comes from `python -m ask dax` calling a ranked measure by name, or it does not come.
-- The skill's "Where it runs" says what the commands need - Python 3.12, the root of this
-  clone, `pip install -e .`, `az login`, `--db` - and when to stop instead. Two things it
-  cannot know about this surface:
-  - In ask mode you cannot run commands: say the question needs agent mode and stop.
-  - The cloud agent has no `az login`: say so and stop; do not set up credentials.
+  comes from DAX calling a ranked measure by name, or it does not come.
+- The skill needs a shell and `az login`. In ask mode you cannot run commands: say the
+  question needs agent mode and stop. The cloud agent has no `az login`: say so and stop; do
+  not set up credentials.
 
-`client/` is the other side of this repo: how someone with no clone points a tool at an
-already-published context, over Power BI alone. It is documentation of that setup, not
-instructions for you - do not paste or follow `client/SKILL.md` or `client/m365/instructions.md`
-here. In this clone you use the skill in `.claude/skills/`, which reads `context.md`.
+`context.md` and `wiki/`, in the lakehouse's `Files/`, are the context layer in full, for a
+person reading it. They are not the client path.
 
 ## Working on the code
 
