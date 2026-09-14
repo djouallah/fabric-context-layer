@@ -21,16 +21,15 @@ The ranking lives in a semantic model named `context_model`, in the workspace ho
 context lakehouse. Open it in Fabric; the address carries the two ids the agent will ask for,
 as `/groups/<workspace-guid>/datasets/<model-guid>`.
 
-It has four tables. `answers` is what the agent reads: one row per spelling of every term,
-carrying the winning definition - the measure to call, the model that owns it and its
-`workspace_id` / `model_id`, a ready-to-run `dax`, a `confidence` and the `rivals`.
-`definitions` is every competing definition, ranked, for a user who named a model or asked to
-compare; `terms` and `aliases` are the term and its spellings.
+It has one table, `answers`: every spelling of every term, every definition, ranked. The
+rank-1 row is what the agent reads - the measure to call, the model that owns it and its
+`workspace_id` / `model_id`, a ready-to-run `dax`, a `confidence` and the `rivals`; the other
+ranks are for a user who named a model or asked to compare.
 
 Sanity-check it with the lookup the agent will run:
 
 ```dax
-EVALUATE FILTER('answers', 'answers'[alias_norm] = "revenue")
+EVALUATE FILTER('answers', 'answers'[alias_norm] = "revenue" && 'answers'[rank] = 1)
 ```
 
 One row: the answer.

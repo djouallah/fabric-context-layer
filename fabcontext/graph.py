@@ -356,24 +356,26 @@ def _derive(con, aliases: Optional[Dict[str, List[str]]] = None) -> None:
             con.execute("INSERT INTO aliases VALUES (?, ?, ?, 'manual', NULL)",
                         [tid, alias, alias.lower()])
 
-    # --- the answer, pre-picked: one row per spelling, carrying rank 1 -----------------
-    # What a client reads. The ranking above is the reasoning; this is its result, flat, so
-    # that an agent whose only tool is a DAX query needs one equality filter - no join, no
-    # rank to pick, no relationship to ride - and cannot take a different row by accident.
+    # --- the ranking, flat: one row per spelling per definition ------------------------
+    # The one table a client reads. The ranking above is the reasoning; this is its result
+    # denormalised, so an agent whose only tool is a DAX query needs one equality filter on
+    # the user's own wording and `rank = 1` - no join, no relationship to ride - and the same
+    # filter without the rank is the ranked list for a user who named a model or asked to
+    # compare.
     con.execute("""
         CREATE OR REPLACE TABLE answers AS
         WITH spellings AS (
             SELECT DISTINCT term_id, alias, alias_norm FROM aliases
-        ), top AS (
-            SELECT * FROM definitions WHERE rank = 1
-        ), others AS (
-            SELECT term_id,
-                   string_agg(name || ' in ' || owner_item_name
-                              || ' (rank ' || rank::VARCHAR || ')', ', ' ORDER BY rank) AS rivals
-              FROM definitions WHERE rank > 1 GROUP BY term_id
+        ), tagged AS (
+            SELECT term_id, rank,
+                   name || ' in ' || owner_item_name || ' (rank ' || rank::VARCHAR || ')' AS tag
+              FROM definitions
         )
-        SELECT s.alias, s.alias_norm, s.term_id, t.label,
+        SELECT t.label                                                    AS term,
+               s.alias, s.alias_norm, s.term_id,
+               d.rank,
                d.name                                                     AS measure,
+               d.description,
                d.owner_item_name                                          AS model,
                d.owner_item_id                                            AS model_id,
                d.workspace_id,
@@ -384,12 +386,12 @@ def _derive(con, aliases: Optional[Dict[str, List[str]]] = None) -> None:
                round(d.score, 2)                                          AS score,
                d.n_definitions,
                d.conflicting,
-               o.rivals
+               (SELECT string_agg(o.tag, ', ' ORDER BY o.rank) FROM tagged o
+                 WHERE o.term_id = d.term_id AND o.rank <> d.rank)        AS rivals
           FROM spellings s
-          JOIN terms t ON t.term_id = s.term_id
-          JOIN top d   ON d.term_id = s.term_id
-          LEFT JOIN others o ON o.term_id = s.term_id
-         ORDER BY s.term_id, s.alias_norm""")
+          JOIN terms t       ON t.term_id = s.term_id
+          JOIN definitions d ON d.term_id = s.term_id
+         ORDER BY s.term_id, s.alias_norm, d.rank""")
 
     # Push the rank back onto the edge, so the graph itself carries "defines - ranked #1".
     con.execute("""

@@ -74,12 +74,12 @@ def test_every_column_either_file_queries_is_published():
 def test_both_are_told_which_ids_to_run_the_measure_on():
     for path in (M365, SKILL):
         body = _read(path)
-        assert "FILTER('answers', 'answers'[alias_norm]" in body, (
-            os.path.relpath(path, ROOT) + " must read the answer off `answers` first - one "
-            "equality filter, the row is rank 1")
-        for column in ("workspace_id", "owner_item_id"):
-            assert "'definitions'[" + column + "]" in body, (
-                os.path.relpath(path, ROOT) + " must return " + column + "; without both "
+        assert "FILTER('answers', 'answers'[alias_norm] = \"<term>\" && 'answers'[rank] = 1)" \
+            in body, (os.path.relpath(path, ROOT) + " must read the answer off `answers` "
+                      "first - one equality filter and rank = 1")
+        for column in ("workspace_id", "model_id"):
+            assert "`" + column + "`" in body, (
+                os.path.relpath(path, ROOT) + " must name " + column + "; without both "
                 "GUIDs the agent cannot run the measure on the model that owns it")
 
 

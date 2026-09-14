@@ -36,33 +36,28 @@ again.
 Take the business noun from the user's question, lowercase it, and run this against the
 CONTEXT MODEL:
 
-    EVALUATE FILTER('answers', 'answers'[alias_norm] = "<term>")
+    EVALUATE FILTER('answers', 'answers'[alias_norm] = "<term>" && 'answers'[rank] = 1)
 
-The row is the answer: the rank-1 `measure`, its `model`, that model's `workspace_id` and
-`model_id`, the `expression`, a ready-to-run `dax`, a `confidence`, `n_definitions`,
-`conflicting`, and `rivals` — the others in one line. The ranking is not yours to redo.
-Two rows: take the one whose `label` fits the question.
+`answers` is the one table: every spelling of every business term, every definition, ranked.
+The rank-1 row is the answer: the `term`, the `measure`, its `description` if one was
+written, its `model`, that model's `workspace_id` and `model_id`, the `expression`, a
+ready-to-run `dax`, a `confidence`, `n_definitions`, `conflicting`, and `rivals` — the others
+in one line. The ranking is not yours to redo. Two rows: take the one whose `term` fits.
 
 If nothing comes back, widen once:
 
-    EVALUATE TOPN(15, SELECTCOLUMNS('terms', "term", 'terms'[label],
-        "n", 'terms'[n_definitions]), 'terms'[n_definitions], DESC)
+    EVALUATE TOPN(15, DISTINCT(SELECTCOLUMNS(FILTER('answers', 'answers'[rank] = 1),
+        "term", 'answers'[term], "n", 'answers'[n_definitions])), [n], DESC)
 
 **Do not compute anything for a term with no definition** — nothing in this tenant agrees
 what its number means. Say that, name the nearest terms you saw, and stop.
 
 ## Step 2 — two exceptions only
 
-Never hand back a list to choose from. Only these go past the row, to the ranked list:
+Never hand back a list to choose from. Only these go past the row, to the ranked list — the
+same filter without the rank:
 
-    EVALUATE
-    CALCULATETABLE(
-        SELECTCOLUMNS('definitions',
-            "rank", 'definitions'[rank], "measure", 'definitions'[name],
-            "model", 'definitions'[owner_item_name],
-            "workspace_id", 'definitions'[workspace_id], "model_id", 'definitions'[owner_item_id],
-            "expression", 'definitions'[expression], "confidence", 'definitions'[confidence]),
-        'aliases'[alias_norm] = "<term>")
+    EVALUATE FILTER('answers', 'answers'[alias_norm] = "<term>")
 
 - The user named a model or workspace: take theirs.
 - The user asked to compare definitions: show each with rank and model, then stop — no number.

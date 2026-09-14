@@ -180,22 +180,19 @@ it, the run says so and the context is still published.
 
 What it exposes, and why it is shaped this way ([fabcontext/semantic_model.py](../fabcontext/semantic_model.py)):
 
-- `answers` is what a client reads: one row per spelling of every term, carrying rank 1
-  already picked - the `measure` to call, the `model` that owns it and its `model_id` and
-  `workspace_id`, the `expression`, a ready-to-run `dax`, a `confidence`, and `rivals`, the
-  other definitions in one line. One equality filter on `alias_norm` with the user's own
-  wording, and the row is the answer: no join, no rank to pick, nothing to get wrong.
-- `definitions` is every competing definition, ranked, with `rank`, `score`, `confidence`,
-  the owning model's two ids and the `expression` - for the two questions `answers` cannot
-  settle: the user named a model, or asked to compare.
-- `terms` is one row per business term; `aliases` is every spelling of every term, related to
-  `terms` both ways so a filter on a spelling reaches `definitions`.
+One table, `answers`, and no relationship. It is the ranking denormalised: one row per
+spelling of every term per definition, with `rank`. Filter `alias_norm` with the user's own
+wording and `rank = 1`, and the row is the answer - the `term`, the `measure` to call and
+its `description` when its author wrote one, the `model` that owns it and its `model_id` and
+`workspace_id`, the `expression`, a ready-to-run `dax`, a `confidence`, and `rivals`, the
+other definitions in one line. The same filter without the
+rank is the ranked list, for the two questions rank 1 cannot settle: the user named a model,
+or asked to compare. No join, nothing to ride, no second path for a query to take by
+accident.
 
 It is a curated subset, not the tables as published: no `def_id`, no signal internals, no
-margin - and every table and column carries a description, which is what a metadata-driven
-agent reads off the field list. `definitions` also carries a `Dax Template` measure returning
-a ready-to-run `EVALUATE ROW("v", CALCULATE([<measure>]))` for the definition in filter
-context.
+margin - and the table and every column carry a description, which is what a
+metadata-driven agent reads off the field list.
 
 The line between what is published here and what is not is what only the harvest can know.
 A ranking is derived from 28 days of query history, endorsement and usage, none of which an

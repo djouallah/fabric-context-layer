@@ -88,21 +88,22 @@ Take the business noun from the question, lowercase it, and run this against the
 model**:
 
 ```dax
-EVALUATE FILTER('answers', 'answers'[alias_norm] = "<term>")
+EVALUATE FILTER('answers', 'answers'[alias_norm] = "<term>" && 'answers'[rank] = 1)
 ```
 
-`answers` is one row per spelling of every term, and the row is the answer already: the
-rank-1 `measure`, the `model` that owns it, that model's `workspace_id` and `model_id`, the
+`answers` is the one table: every spelling of every business term, every definition, ranked.
+The rank-1 row is the answer already: the `term`, the `measure`, its `description` when its
+author wrote one, the `model` that owns it, that model's `workspace_id` and `model_id`, the
 `expression`, a ready-to-run `dax`, a `confidence`, `n_definitions`, whether they are
-`conflicting`, and `rivals` - the other definitions, ranked, in one line. The ranking is
-already decided and is not yours to redo. Take the row and move on. Two rows means the
-spelling names two terms; take the one whose `label` fits the question.
+`conflicting`, and `rivals` - the other definitions in one line. The ranking is already
+decided and is not yours to redo. Take the row and move on. Two rows means the spelling
+names two terms; take the one whose `term` fits the question.
 
 If nothing comes back, widen once to see what the layer does know:
 
 ```dax
-EVALUATE TOPN(15, SELECTCOLUMNS('terms', "term", 'terms'[label],
-    "n", 'terms'[n_definitions]), 'terms'[n_definitions], DESC)
+EVALUATE TOPN(15, DISTINCT(SELECTCOLUMNS(FILTER('answers', 'answers'[rank] = 1),
+    "term", 'answers'[term], "n", 'answers'[n_definitions])), [n], DESC)
 ```
 
 then say the term is not defined here, name the nearest terms you saw, and stop. **Do not
@@ -112,20 +113,11 @@ number means, and inventing one is exactly what this layer exists to prevent.
 ## Step 2 - the two exceptions
 
 The row from step 1 is the answer. Never present a list and ask the user to choose; that is
-a non-answer. Two questions, and only these, go past it to the ranked list:
+a non-answer. Two questions, and only these, go past it to the ranked list - the same
+filter without the rank:
 
 ```dax
-EVALUATE
-CALCULATETABLE(
-    SELECTCOLUMNS('definitions',
-        "rank", 'definitions'[rank],
-        "measure", 'definitions'[name],
-        "model", 'definitions'[owner_item_name],
-        "workspace_id", 'definitions'[workspace_id],
-        "model_id", 'definitions'[owner_item_id],
-        "expression", 'definitions'[expression],
-        "confidence", 'definitions'[confidence]),
-    'aliases'[alias_norm] = "<term>")
+EVALUATE FILTER('answers', 'answers'[alias_norm] = "<term>")
 ```
 
 - **The user named a model or workspace.** Take their definition's row instead of rank 1.
@@ -244,8 +236,7 @@ Never withhold the number in order to discuss definitions.
 
 ## What this cannot answer
 
-`context_model` carries four tables - `answers`, `terms`, `definitions` and `aliases` - the
-ranking, and nothing else. Lineage (*what feeds X*), which reports use a measure, and how
+`context_model` carries one table - `answers` - the ranking, and nothing else. Lineage (*what feeds X*), which reports use a measure, and how
 often one is queried are **not reachable here**. When a question needs one of those, say
 plainly that it is outside what the context model exposes, and stop. Do not substitute a
 guess, and do not go looking for another source.

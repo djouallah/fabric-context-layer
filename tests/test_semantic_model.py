@@ -35,15 +35,19 @@ def test_data_types_map_and_fall_back_to_string():
     assert sm.data_type("STRUCT(a INTEGER)") == "string"
 
 
-def test_the_four_tables_are_direct_lake_over_the_lakehouse(con):
+def test_the_one_table_is_direct_lake_over_the_lakehouse(con):
+    """One denormalised table, no relationship: a client needs one equality filter and
+    nothing to join, and there is no second path for a query to take by accident."""
     model = _bim(con)
     names = [t["name"] for t in model["model"]["tables"]]
-    assert names == list(sm.TABLES)
+    assert names == list(sm.TABLES) == ["answers"]
+    assert model["model"]["relationships"] == []
     for table in model["model"]["tables"]:
         part, = table["partitions"]
         assert part["mode"] == "directLake"
         assert part["source"] == {"type": "entity", "entityName": table["name"],
                                   "schemaName": "dbo", "expressionSource": sm.EXPRESSION}
+        assert "measures" not in table
 
 
 def test_every_partition_points_at_an_expression_that_exists(con):
@@ -81,35 +85,14 @@ def test_the_model_is_curated_and_every_column_says_what_it_means(con):
         for column in table["columns"]:
             assert column["name"] in built, (table["name"], column["name"])
             assert column.get("description"), (table["name"], column["name"])
-    exposed = {c["name"] for c in _table(model, "answers")["columns"]}
-    for needed in ("alias_norm", "measure", "model_id", "workspace_id", "dax", "confidence",
-                   "rivals"):
-        assert needed in exposed, needed
-    assert "def_id" not in {c["name"] for c in _table(model, "definitions")["columns"]}
-    # answers stands alone: one filter, no relationship to ride.
-    assert not any(r["fromTable"] == "answers" or r["toTable"] == "answers"
-                   for r in model["model"]["relationships"])
 
 
-def test_aliases_filter_through_to_definitions(con):
-    """One-directional would make every lookup by a spelling come back empty, which reads as
-    'the term is not defined' rather than as a bug."""
-    rels = {r["fromTable"]: r for r in _bim(con)["model"]["relationships"]}
-    assert set(rels) == {"definitions", "aliases"}
-    assert all(r["toTable"] == "terms" and r["toColumn"] == sm.KEY for r in rels.values())
-    assert rels["aliases"]["crossFilteringBehavior"] == "bothDirections"
-    assert "crossFilteringBehavior" not in rels["definitions"]
-
-
-def test_the_ids_an_agent_needs_are_columns_of_the_fact(con):
-    columns = {c["name"] for c in _table(_bim(con), "definitions")["columns"]}
-    for needed in ("rank", "score", "name", "workspace_id", "owner_item_id"):
+def test_the_ids_an_agent_needs_are_columns_of_the_table(con):
+    columns = {c["name"] for c in _table(_bim(con), "answers")["columns"]}
+    for needed in ("term", "alias_norm", "rank", "measure", "description", "model_id",
+                   "workspace_id", "dax", "confidence", "rivals"):
         assert needed in columns, needed
-
-
-def test_the_dax_template_measure_is_on_the_fact(con):
-    measures = _table(_bim(con), "definitions").get("measures") or []
-    assert [m["name"] for m in measures] == ["Dax Template"]
+    assert "def_id" not in columns
 
 
 def test_lineage_tags_are_stable_across_builds(con):

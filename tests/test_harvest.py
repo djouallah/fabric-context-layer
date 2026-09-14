@@ -41,21 +41,29 @@ def test_conflicting_definitions_are_ranked(con):
 
 
 def test_answers_is_rank_1_per_spelling(con):
-    """What a client reads: one equality filter on the user's own wording, and the row is the
-    answer - no join, no rank to pick, nothing to get wrong."""
+    """The one table a client reads: one equality filter on the user's own wording and
+    rank = 1, and the row is the answer - no join, nothing to get wrong. The same filter
+    without the rank is the ranked list."""
     rows = con.execute(
-        "SELECT measure, model, model_id, workspace_id, dax, confidence, n_definitions, "
-        "       conflicting, rivals FROM answers WHERE alias_norm = 'revenue'").fetchall()
+        "SELECT term, measure, description, model, model_id, workspace_id, dax, confidence, "
+        "       n_definitions, conflicting, rivals FROM answers "
+        " WHERE alias_norm = 'revenue' AND rank = 1").fetchall()
     assert len(rows) == 1, rows
-    measure, model, model_id, workspace_id, dax, confidence, n, conflicting, rivals = rows[0]
-    assert (measure, model, model_id, workspace_id) == ("Total Revenue", "Sales Model",
-                                                         MODEL_A, WS)
+    (term, measure, description, model, model_id, workspace_id, dax, confidence, n,
+     conflicting, rivals) = rows[0]
+    assert (term, measure, description) == ("Total Revenue", "Total Revenue", "Net of returns.")
+    assert (model, model_id, workspace_id) == ("Sales Model", MODEL_A, WS)
     assert dax == 'EVALUATE ROW("v", [Total Revenue])'
     assert confidence in ("high", "medium", "low")
     assert n == 3 and conflicting is True
     assert "(rank 2)" in rivals and "(rank 3)" in rivals and "Finance Model" in rivals, rivals
-    # One row per spelling per term: a spelling two measures share is not doubled.
-    doubled = con.execute("SELECT alias_norm, term_id FROM answers GROUP BY 1, 2 "
+    # Without the rank: every definition of the term, and each row's rivals are the others.
+    ranked = con.execute("SELECT rank, measure, rivals FROM answers "
+                         "WHERE alias_norm = 'revenue' ORDER BY rank").fetchall()
+    assert [r[0] for r in ranked] == [1, 2, 3], ranked
+    assert "(rank 1)" in ranked[1][2] and "(rank 2)" not in ranked[1][2], ranked
+    # One row per spelling per definition: a spelling two measures share is not doubled.
+    doubled = con.execute("SELECT alias_norm, term_id, rank FROM answers GROUP BY 1, 2, 3 "
                           "HAVING count(*) > 1").fetchall()
     assert doubled == []
     # Every term is reachable through it, by every one of its spellings.
