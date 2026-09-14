@@ -6,11 +6,10 @@ simple.
 
 - A data platform is full of signals: query history, who opens what, what is certified,
   what is refreshed. That is enough to rank definitions.
-- Nobody will maintain a knowledge graph by hand, and the ones that exist drift. The
+- It is very hard to maintain a knowledge graph by hand, and the ones that exist drift. The
   graph has to build itself.
-- A stateless agent is attractive: the ranking happens before the question, so the model
-  behind the agent can change without losing anything.
-- A context layer is there to be useful, not to hold the ultimate truth.
+- The agent has to be stateless and replaceable.
+- A context layer is here to be useful, not to be perfect.
 
 The bet is that a context built automatically, at least to start, and ranked on how the
 platform already behaves gets better as the platform is used. I do not know yet whether
