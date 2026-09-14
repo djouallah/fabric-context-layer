@@ -238,3 +238,22 @@ def test_ask_finds_context_md_beside_the_tables(tmp_path):
     assert ctx.lakehouse_ids(fixtures.WS + "/" + fixtures.LH) == (fixtures.WS, fixtures.LH)
     with pytest.raises(ctx.NotFound):
         ctx.context_file(str(tmp_path / "copy.duckdb"))
+
+
+def test_the_default_target_does_not_depend_on_what_was_harvested():
+    """`to` is the override; without it the context always lands at the same address.
+
+    The old default was the first workspace named, which made the destination a property of
+    the argument order - harvest Sales then Finance and the context is in Sales, swap them and
+    it moves. Nothing could find it without being told. The asking side now looks up
+    `context_layer` by name, so the destination has to be a constant.
+    """
+    import pytest
+
+    from fabcontext import DEFAULT_LAKEHOUSE, DEFAULT_WORKSPACE, _target
+
+    assert _target(None) == (DEFAULT_WORKSPACE, DEFAULT_LAKEHOUSE)
+    assert _target("") == (DEFAULT_WORKSPACE, DEFAULT_LAKEHOUSE)
+    assert _target("Sales/ctx") == ("Sales", "ctx")
+    with pytest.raises(ValueError):
+        _target("Sales")

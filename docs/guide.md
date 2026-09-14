@@ -52,12 +52,29 @@ import fabcontext
 url = fabcontext.harvest("My Workspace")
 ```
 
-That is the whole interface. The first call creates a lakehouse called `context_layer` in
-that workspace; every later call updates it. It returns the lakehouse's Tables root, which is
-what the query side takes as `--db`.
+That is the whole interface. The first call creates a lakehouse called `context_layer`; every
+later call updates it. It returns the lakehouse's Tables root, which is what the query side
+takes as `--db`.
 
-Several workspaces go in one call, as a list of names or GUIDs, with `to` saying where the
-context lands (otherwise it is the first workspace named):
+**Make the workspace first.** The context does not land beside what it describes - it lands at
+a fixed address: a lakehouse called `context_layer`, in a workspace called `context_layer`, on
+a Fabric capacity, with you as Contributor on it. `fabcontext` looks that workspace up and
+never creates one, so the first run fails with a sentence telling you to make it.
+
+The fixed address is the point. `agent/` has no clone, no config file and nothing to read but
+the tenant itself, so it finds the context by looking up that workspace name and then the
+semantic model `context_model` inside it. A context published wherever the first workspace
+named happened to be is a context nothing can find without being told where it is.
+
+Several workspaces go in one call, as a list of names or GUIDs. They are read into one graph
+and published into one lakehouse, so definitions from different workspaces compete in the same
+ranking:
+
+```python
+url = fabcontext.harvest(["sqlengines", "Sales", "Finance"])
+```
+
+`to` overrides the destination, as `<workspace>/<lakehouse>`:
 
 ```python
 url = fabcontext.harvest(["sqlengines", "Sales", "Finance"], to="sqlengines/context_layer")
@@ -86,7 +103,7 @@ The knobs, all optional:
 
 | | |
 |---|---|
-| `to="<workspace>/<lakehouse>"` | where to publish. Default: `context_layer` in the first workspace named |
+| `to="<workspace>/<lakehouse>"` | where to publish. Default: the lakehouse `context_layer` in a workspace named `context_layer` |
 | `days=28` | days of activity events. The audit log keeps 30 |
 | `query_log=True` | also read the monitoring Eventhouse (below) |
 | `refresh=True` | refetch everything rather than only what changed |
@@ -167,8 +184,10 @@ says plainly that lineage, reports and table detail are out of its reach.
 ### The context model
 
 Every run creates or updates a Direct Lake semantic model named `context_model` beside the
-tables, and prints its id on the `semantic model` step - that and the workspace are the two
-ids the agent side asks for. Because it is Direct Lake over the published tables, a later
+tables, and prints its id on the `semantic model` step. `context_model` in `context_layer` is
+the address the agent side discovers by - it lists the workspaces it can see, takes the one
+named `context_layer`, and finds the model by name inside it, so nobody pastes a GUID.
+Because it is Direct Lake over the published tables, a later
 harvest refreshes what it serves with no reload and nothing republished on the agent side.
 Creating the model needs a permission publishing the tables did not; if the tenant refuses
 it, the run says so and the context is still published.

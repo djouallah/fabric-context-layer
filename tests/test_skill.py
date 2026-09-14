@@ -83,6 +83,25 @@ def test_the_installed_skill_says_what_its_one_call_needs():
                               "because it is read on a machine with nothing else beside it")
 
 
+def test_the_installed_skill_looks_for_the_names_the_harvest_publishes_under():
+    """The installed skill finds the context by name, and nothing hands it the names.
+
+    It lists the tenant's workspaces, takes the one called `context_layer` and the semantic
+    model called `context_model` inside it. Both spellings are literals in a markdown file on
+    a machine with no clone, so renaming either one here silently leaves that file looking for
+    something the harvest no longer writes - and the failure lands on the asking side, as "the
+    context layer has not been published in this tenant".
+    """
+    import fabcontext
+    from fabcontext import semantic_model
+
+    text = _read(AGENT_SKILL)
+    for name in (fabcontext.DEFAULT_WORKSPACE, semantic_model.DEFAULT_NAME):
+        assert name in text, (
+            "agent/SKILL.md must name " + repr(name) + " literally - it is how the skill "
+            "finds the context, and it has nothing else to read")
+
+
 def test_copilot_instructions_route_to_the_skill_and_not_to_the_m365_protocol():
     text = _read(INSTRUCTIONS)
     assert "fabric-context" in text, "the instructions must name the skill they route to"

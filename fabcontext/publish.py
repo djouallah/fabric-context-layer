@@ -16,7 +16,7 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any, Dict, Iterable, Optional, Tuple
 
-from ._fabric import Workspace, delta, onelake
+from ._fabric import FabricError, Workspace, delta, onelake
 
 TABLES = ("nodes", "edges", "activity", "query_usage", "query_stats", "terms",
           "definitions", "aliases", "item_usage", "meta", "flow", "measure_usage",
@@ -58,6 +58,13 @@ def open_lakehouse(workspace: str, lakehouse: str,
     ws = Workspace(workspace)
     existing = {lh.get("displayName") for lh in ws.list_lakehouses()}
     created = lakehouse not in existing
+    if created and not ws.info().get("capacityId"):
+        # A workspace on shared capacity resolves cleanly and then fails the create with an
+        # opaque 400. Forgetting the capacity is the likeliest way to get the target wrong, so
+        # it is worth one GET to say which of the two things is missing.
+        raise FabricError(
+            "the workspace " + repr(workspace) + " is not on a Fabric capacity, so no "
+            "lakehouse can be created in it. Assign it one and run this again.")
     lh_id = ws.create_lakehouse(lakehouse, schemas=True, folder=folder)
     if folder and not created:
         ws.move_item(lh_id, folder)          # create_lakehouse leaves an existing one put

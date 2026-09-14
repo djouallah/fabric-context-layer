@@ -12,7 +12,6 @@ curl -fsSL -o ~/.claude/skills/fabric-context/SKILL.md \
   https://raw.githubusercontent.com/djouallah/fabric-context-layer/main/agent/SKILL.md
 
 az login
-export FABRIC_CONTEXT_MODEL="<workspace-guid>/<model-guid>"   # from context_model's address
 ```
 
 PowerShell:
@@ -22,14 +21,14 @@ $dir = "$HOME\.claude\skills\fabric-context"; mkdir $dir -Force
 iwr https://raw.githubusercontent.com/djouallah/fabric-context-layer/main/agent/SKILL.md -OutFile $dir\SKILL.md
 
 az login
-setx FABRIC_CONTEXT_MODEL "<workspace-guid>/<model-guid>"
 ```
 
 Skills are discovered when a session starts, so open a new one. Then ask a question in plain
 English - "what was revenue last quarter" - and the skill does the rest.
 
-`FABRIC_CONTEXT_MODEL` is a convenience. Without it the skill asks for the `context_model`
-link the first time it needs one, and remembers it for that conversation.
+No ids to configure: the skill finds `context_model` in the workspace named `context_layer`.
+Setting `FABRIC_CONTEXT_MODEL` to `<workspace-guid>/<model-guid>` skips that lookup, and is
+the way to point it at a context published somewhere else.
 
 ## Inside this repo
 

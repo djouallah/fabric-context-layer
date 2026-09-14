@@ -1,6 +1,6 @@
 # context-layer
 
-There is a lot of talk about context layers, and the best way to learn one is to build
+There is a lot of talk about context layers these days, and the best way to learn one is to build
 one. This is a toy, but the core ideas turned out to be simple.
 
 - A data platform is full of signals: query history, who opens what, what is certified,

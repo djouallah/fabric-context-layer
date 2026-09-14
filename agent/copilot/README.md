@@ -13,7 +13,6 @@ curl -fsSL -o .claude/skills/fabric-context/SKILL.md \
   https://raw.githubusercontent.com/djouallah/fabric-context-layer/main/agent/SKILL.md
 
 az login
-export FABRIC_CONTEXT_MODEL="<workspace-guid>/<model-guid>"   # from context_model's address
 ```
 
 Then open that folder in VS Code, or `cd` into it for the CLI, and ask a question in plain

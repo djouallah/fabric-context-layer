@@ -3,7 +3,12 @@
     %pip install fabcontext
     import fabcontext
     url = fabcontext.harvest("My Workspace")
-    url = fabcontext.harvest(["Sales", "Finance"], to="Sales/context_layer")
+    url = fabcontext.harvest(["Sales", "Finance"])
+
+However many workspaces are named, they are read into one graph and published into one
+lakehouse: `context_layer`, in a workspace called `context_layer` that you make first. That
+fixed address is the point - it is how the asking side finds the context without being told
+where it is. `to="<workspace>/<lakehouse>"` overrides it.
 
 The first call creates the lakehouse; every later call updates it. Nothing else to configure
 and nothing kept on the machine that ran it - the lakehouse is the only state, and the URL it
@@ -19,10 +24,11 @@ import tempfile
 import time
 from typing import Dict, List, Optional, Sequence, Union
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 
 __all__ = ["harvest", "build_and_publish", "open_context", "__version__"]
 
+DEFAULT_WORKSPACE = "context_layer"
 DEFAULT_LAKEHOUSE = "context_layer"
 
 
@@ -58,15 +64,39 @@ def _work_dirs(work: str):
             os.path.join(work, "context.md"))
 
 
-def _target(to: Optional[str], first_workspace: str):
+def _target(to: Optional[str]):
     """(workspace, lakehouse) for `to`, or the default: a lakehouse called `context_layer` in
-    the first workspace named, so the context lives beside what it describes."""
+    a workspace called `context_layer`.
+
+    One address, spelled the same in every tenant, because the asking side has to find this
+    without being told where it is - it looks the workspace up by that name and the model up
+    by `context_model` inside it. Publishing beside what it describes would put the context
+    wherever the first workspace named happened to be, which is not an address anyone can
+    predict.
+    """
     if not to:
-        return first_workspace, DEFAULT_LAKEHOUSE
+        return DEFAULT_WORKSPACE, DEFAULT_LAKEHOUSE
     workspace, _sep, lakehouse = to.partition("/")
     if not workspace or not lakehouse:
         raise ValueError("`to` is <workspace>/<lakehouse>; got " + repr(to))
     return workspace, lakehouse
+
+
+def _no_workspace(workspace: str):
+    """The error for a default target that is not there.
+
+    With an explicit `to` the caller named the workspace themselves and "not found" says
+    enough. With the default they named nothing, so the same sentence reads like a bug in the
+    package rather than the one thing they have to do before the first run.
+    """
+    from ._fabric import FabricError
+
+    return FabricError(
+        "no workspace named " + repr(workspace) + ". The context publishes to a fixed "
+        "address - that is what lets an agent find it without being told where - so create a "
+        "workspace called " + workspace + " on a Fabric capacity, give yourself Contributor "
+        "on it, and run this again. To publish somewhere else instead, pass "
+        "to=\"<workspace>/<lakehouse>\".")
 
 
 def build_and_publish(work: str, store, *, profile: bool = True, values: bool = True,
@@ -123,9 +153,12 @@ def harvest(workspaces: Union[str, Sequence[str]], to: Optional[str] = None, *,
             log=print) -> str:
     """Harvest `workspaces` into a lakehouse and return its URL.
 
-    `workspaces` is a name, a GUID, or a list of either. `to` names the lakehouse to publish
-    into as `<workspace>/<lakehouse>`; by default it is `context_layer` in the first workspace
-    given. `aliases` merges spellings the word lists cannot, as {term_id: [spelling, ...]}.
+    `workspaces` is a name, a GUID, or a list of either - all of them read into one graph and
+    published into one lakehouse, so definitions from different workspaces compete in the same
+    ranking. `to` names that lakehouse as `<workspace>/<lakehouse>`; by default it is
+    `context_layer` in a workspace called `context_layer`, an address the asking side can find
+    on its own. That workspace has to exist already, on a Fabric capacity. `aliases` merges
+    spellings the word lists cannot, as {term_id: [spelling, ...]}.
 
     **Create or update.** The lakehouse is made if it is not there and reused if it is, and an
     existing one has its previous `Files/raw` pulled down first - which is what makes a second
@@ -142,16 +175,22 @@ def harvest(workspaces: Union[str, Sequence[str]], to: Optional[str] = None, *,
     lineage and usage.
     """
     from . import common, fetch, files, publish
+    from ._fabric import FabricError
 
     names = [workspaces] if isinstance(workspaces, str) else list(workspaces)
     if not names:
         raise ValueError("name at least one workspace to harvest")
-    workspace, lakehouse = _target(to, names[0])
+    workspace, lakehouse = _target(to)
     common.set_aliases(aliases)
 
     step, _rows = _steps(log)
-    store, created = step("open lakehouse", publish.open_lakehouse,
-                          workspace, lakehouse, folder)
+    try:
+        store, created = step("open lakehouse", publish.open_lakehouse,
+                              workspace, lakehouse, folder)
+    except FabricError as exc:
+        if to is None and "not found" in str(exc):
+            raise _no_workspace(workspace) from exc
+        raise
 
     own_work = work is None
     work = work or tempfile.mkdtemp(prefix="fabcontext_")

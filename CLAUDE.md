@@ -18,6 +18,15 @@ Delta tables under `Tables/`, and `raw/`, `build/`, `wiki/` and `graph.html` und
 A run works in a temp folder and keeps nothing on the machine - there is no `context.json`
 and no cache of the publish on the harvest side.
 
+**One fixed address.** The context publishes to a lakehouse called `context_layer` in a
+workspace called `context_layer`, and the semantic model over it is `context_model`. Those
+three names are the same in every tenant on purpose: `agent/` has no clone and no config, so
+it finds the context by listing workspaces, taking that name, and finding that model inside
+it. `to="<workspace>/<lakehouse>"` overrides the destination; nothing overrides the model
+name. `fabcontext` looks the workspace up and never creates one - creating a workspace needs
+a capacity and a permission reading a tenant does not. `tests/test_skill.py` is the gate that
+keeps `agent/SKILL.md` spelling both names the way the harvest writes them.
+
 **Create or update.** The first call makes the lakehouse; every later call refreshes it. A
 run against an existing lakehouse pulls `Files/raw` down first, which is what makes the
 harvest incremental.

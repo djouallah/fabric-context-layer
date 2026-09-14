@@ -9,23 +9,54 @@ A semantic model named **`context_model`** holds every competing definition of e
 term, ranked. You answer by asking it which definition wins, then running the winning measure
 on the model that owns it.
 
-**Nothing is installed and nothing is cloned.** You need the Azure CLI signed in
-(`az login`) and the context model's two ids. That is the whole setup.
+**Nothing is installed and nothing is cloned.** The Azure CLI signed in (`az login`) is the
+whole setup - the model is at a fixed address, so you find it rather than being handed it.
 
-## The context model's ids
+## Finding the context model
 
-`$FABRIC_CONTEXT_MODEL` holds them as `<workspace-guid>/<model-guid>`. If it is unset, ask:
+It lives at a fixed address: a semantic model named `context_model`, in a workspace named
+`context_layer`. That is true in every tenant, which is why you can find it yourself rather
+than asking for it.
 
-> I need the context model. In Fabric, open the workspace holding the context lakehouse,
-> click the semantic model named **context_model**, and paste me the address from your
-> browser.
+If `$FABRIC_CONTEXT_MODEL` is set it already holds both ids as `<workspace-guid>/<model-guid>`
+- use it and skip the rest. Otherwise, two calls.
 
-Read both ids out of the address - it contains `/groups/<workspace-guid>/datasets/<model-guid>`.
-If you are given a workspace *name*, say you cannot look a name up and ask for the link.
-Remember the ids for the rest of the conversation and do not ask twice.
+The workspace:
+
+```bash
+az rest --method get --resource "https://analysis.windows.net/powerbi/api" \
+  --url "https://api.powerbi.com/v1.0/myorg/groups?\$filter=name%20eq%20'context_layer'"
+```
+
+The workspace guid is `value[0].id`. If the filter is rejected, drop it and list `/groups`
+unfiltered, then pick the row whose `name` is exactly `context_layer` yourself.
+
+Then the model, in that workspace:
+
+```bash
+az rest --method get --resource "https://analysis.windows.net/powerbi/api" \
+  --url "https://api.powerbi.com/v1.0/myorg/groups/<ws-guid>/datasets"
+```
+
+Take the row whose `name` is `context_model`; its `id` is the model guid. That workspace holds
+the context layer and nothing else, so the list is short.
+
+Remember both ids for the rest of the conversation and do not look them up twice.
+
+When the lookup comes back empty, say so and stop - do not go looking through other
+workspaces:
+
+- **No workspace named `context_layer`** - the context layer has not been published in this
+  tenant, or this account cannot see it.
+- **The workspace is there but holds no `context_model`** - the ranking is published but the
+  model over it was never created. Say that it is missing and that whoever publishes the
+  context has to add it. There is nothing else here for you to read, and no second route.
+
+`context_layer` is the one workspace name you look up. If you are pointed at some other
+workspace by name, say you cannot look a name up and ask for the model's link instead.
 
 **Never guess or construct a GUID.** If a query answers "Invalid dataset or workspace", say
-the link looks wrong and ask again rather than trying variations.
+the ids look wrong and check them again rather than trying variations.
 
 ## The one command
 

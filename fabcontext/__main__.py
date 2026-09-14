@@ -20,7 +20,8 @@ def main(argv=None) -> int:
                         help="workspace name or GUID; repeat for more")
     parser.add_argument("--to", default=None,
                         help="the lakehouse to publish into, <workspace>/<lakehouse>. "
-                             "Default: context_layer in the first workspace named")
+                             "Default: the lakehouse context_layer in a workspace named "
+                             "context_layer, which must already exist")
     parser.add_argument("--days", type=int, default=28,
                         help="days of activity events to read (the audit log keeps 30)")
     parser.add_argument("--query-log", action="store_true",

@@ -13,11 +13,9 @@ Set up the fabric-context skill on this machine, then use it once.
    https://raw.githubusercontent.com/djouallah/fabric-context-layer/main/agent/SKILL.md
    into it as SKILL.md.
 2. Run `az account show`. If it fails, tell me to run `az login` and stop here.
-3. Ask me for the Fabric address of the semantic model named context_model, read the two
-   GUIDs out of it, and set FABRIC_CONTEXT_MODEL for my user to
-   <workspace-guid>/<model-guid>.
-4. Read the skill you just downloaded, run its step 1 lookup against context_model, and
-   tell me how many terms the layer holds and which of them are conflicting.
+3. Read the skill you just downloaded, follow it to find context_model, then run its
+   step 1 lookup against that model and tell me how many terms the layer holds and which
+   of them are conflicting.
 ```
 
 Scout asks before its first network command; allow it. Nothing is downloaded but the skill
@@ -32,8 +30,8 @@ next one on. Ask:
 What was revenue last quarter?
 ```
 
-Scout asks `context_model` which definition of the term wins, reads the owning model's two
-GUIDs off that row, runs the measure by name against it, and answers with the number first,
+Scout finds `context_model` in the workspace named `context_layer`, asks it which definition
+of the term wins, reads the owning model's two GUIDs off that row, runs the measure by name against it, and answers with the number first,
 then its sources, then a confidence. The protocol it follows is [the skill](../SKILL.md);
 nothing was pasted into Scout but the setup above.
 

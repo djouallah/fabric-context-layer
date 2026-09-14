@@ -6,15 +6,16 @@ in [../docs/guide.md](../docs/guide.md), not here.
 
 ## What an agent needs
 
-Two things, and no more:
+One thing, and no more:
 
-1. **A read-only Power BI connection.** `az login` on a laptop; the first-party Power BI
-   connector in Copilot Studio. Plus the tenant setting *Dataset Execute Queries REST API*,
-   and Read + Build on the models. Every query runs as the person asking, so RLS applies and
-   two people can correctly get different numbers.
-2. **The context model's ids** - `<workspace-guid>/<model-guid>` for the semantic model
-   named `context_model`. Open it in Fabric and the address carries both:
-   `/groups/<workspace-guid>/datasets/<model-guid>`.
+**A read-only Power BI connection.** `az login` on a laptop; the first-party Power BI
+connector in Copilot Studio. Plus the tenant setting *Dataset Execute Queries REST API*, and
+Read + Build on the models. Every query runs as the person asking, so RLS applies and two
+people can correctly get different numbers.
+
+There are no ids to configure. `context_model` lives in a workspace named `context_layer`, the
+same in every tenant, so an agent with a shell looks it up. M365 Copilot has no shell and is
+the exception: it is given the model's two GUIDs when the agent is built.
 
 No clone, nothing installed, no OneLake, no local database. The ranking lives in the model,
 so nothing on this side changes when it changes.
