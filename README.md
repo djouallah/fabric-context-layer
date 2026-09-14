@@ -31,7 +31,7 @@ nightly on its own.
 
 
 ```python
-%pip install fabcontext
+!pip install fabcontext
 import fabcontext
 url = fabcontext.harvest("Workspace_A")
 ```
