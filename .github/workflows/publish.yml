@@ -29,8 +29,15 @@ jobs:
     needs: version-check
     uses: ./.github/workflows/tests.yml
 
-  publish:
+  # The offline suite cannot see Fabric, so a release also harvests a real tenant first. A tag
+  # that cannot do that does not reach PyPI - the number cannot be taken back afterwards.
+  gate:
     needs: tests
+    uses: ./.github/workflows/release-gate.yml
+    secrets: inherit
+
+  publish:
+    needs: gate
     runs-on: ubuntu-latest
     permissions:
       id-token: write        # trusted publishing; no API token is stored anywhere

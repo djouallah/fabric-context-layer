@@ -56,13 +56,15 @@ class Workspace:
     def list_lakehouses(self) -> List[Dict]:
         return self.list_items("lakehouses")
 
-    def create_lakehouse(self, name: str, schemas: bool = True,
-                         folder: Optional[str] = None) -> str:
+    def create_lakehouse(self, name: str, schemas: bool = True) -> str:
         """Ensure a lakehouse called `name` exists here; return its id.
 
         Idempotent, which is what makes a harvest create-or-update: an existing lakehouse is
-        returned untouched and left where it already lives, so `folder` only places one this
-        call actually creates.
+        returned untouched.
+
+        It creates a lakehouse; it does not place one. `folderId` in this body is rejected -
+        placement at creation time belongs to the generic items endpoint, not the
+        type-specific one - so the caller moves the item afterwards instead.
         """
         for lakehouse in self.list_lakehouses():
             if lakehouse.get("displayName") == name:
@@ -70,8 +72,6 @@ class Workspace:
         body: Dict = {"displayName": name}
         if schemas:
             body["creationPayload"] = {"enableSchemas": True}
-        if folder:
-            body["folderId"] = self.ensure_folder(folder, required=True)
         resp = request("POST", FABRIC_API + "/workspaces/" + self.id + "/lakehouses",
                        token=self.token, json_body=body)
         if resp.status_code in (200, 201):
@@ -87,14 +87,15 @@ class Workspace:
     def list_semantic_models(self) -> List[Dict]:
         return self.list_items("semanticModels")
 
-    def create_semantic_model(self, name: str, parts: List[Dict[str, str]],
-                              folder: Optional[str] = None) -> str:
+    def create_semantic_model(self, name: str, parts: List[Dict[str, str]]) -> str:
         """Ensure a semantic model called `name` exists here with `parts` as its definition.
 
         Idempotent the same way `create_lakehouse` is, and for the same reason: a harvest runs
         again and again, so an existing model has its definition replaced rather than a second
         model appearing beside it. Replacing the definition is also what picks up a new column
         - the tables are Direct Lake, so the data needs no reload, but the schema does.
+
+        Placement is the caller's, by `move_item`, for the reason `create_lakehouse` gives.
         """
         body: Dict = {"definition": {"parts": parts}}
         for model in self.list_semantic_models():
@@ -111,8 +112,6 @@ class Workspace:
                                       + resp.text[:200])
                 return item_id
         body["displayName"] = name
-        if folder:
-            body["folderId"] = self.ensure_folder(folder, required=True)
         resp = request("POST", FABRIC_API + "/workspaces/" + self.id + "/semanticModels",
                        token=self.token, json_body=body)
         if resp.status_code in (200, 201):
@@ -164,11 +163,11 @@ class Workspace:
 
     # ---------------------------------------------------------- cosmetic placement
 
-    def ensure_folder(self, name: str, required: bool = False) -> Optional[str]:
-        """The id of the root-level workspace folder `name`, created if absent.
+    def ensure_folder(self, name: str) -> Optional[str]:
+        """The id of the root-level workspace folder `name`, created if absent, or None.
 
-        Best effort unless `required`: a tenant without the folders API should still get its
-        context published, just at the workspace root.
+        Best effort, with no way to ask for more: a tenant without the folders API should still
+        get its context published, just at the workspace root.
         """
         try:
             for folder in paged(FABRIC_API + "/workspaces/" + self.id + "/folders", self.token):
@@ -178,15 +177,8 @@ class Workspace:
                            token=self.token, json_body={"displayName": name})
             if resp.status_code in (200, 201):
                 return resp.json()["id"]
-            if required:
-                raise FabricError("could not create workspace folder " + repr(name) + " (HTTP "
-                                  + str(resp.status_code) + "): " + resp.text[:200])
-        except FabricError:
-            raise
-        except Exception as exc:                    # noqa: BLE001 - cosmetic unless required
-            if required:
-                raise FabricError("could not resolve workspace folder " + repr(name)
-                                  + ": " + str(exc)) from exc
+        except Exception:                           # noqa: BLE001 - placement is cosmetic
+            pass
         return None
 
     def move_item(self, item_id: str, folder: str) -> Optional[str]:
@@ -194,7 +186,7 @@ class Workspace:
         that cannot be moved is still a working item, so a tenant without the folders API must
         not fail a publish over where the icon sits."""
         try:
-            folder_id = self.ensure_folder(folder, required=True)
+            folder_id = self.ensure_folder(folder)
             if not folder_id:
                 return None
             base = FABRIC_API + "/workspaces/" + self.id + "/items/" + item_id

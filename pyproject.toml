@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fabcontext"
-version = "0.1.3"
+version = "0.1.4"
 description = "Harvest a Microsoft Fabric tenant into a ranked context layer, published as Delta tables in a lakehouse."
 readme = "README.md"
 license = { text = "MIT" }
@@ -44,6 +44,14 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=7"]
+
+# `pytest` means the offline suite, and it has to keep meaning that: it runs the harvest end to
+# end on a synthetic tenant with no network, and a suite that quietly needed a tenant would stop
+# being runnable on a laptop. The one test that does need one is marked `tenant` and deselected
+# here; the release gate opts back in with `pytest -m tenant`.
+[tool.pytest.ini_options]
+addopts = "-m 'not tenant'"
+markers = ["tenant: runs against a real Fabric tenant; needs credentials"]
 
 [project.urls]
 Homepage = "https://github.com/djouallah/fabric-context-layer"

@@ -1,0 +1,50 @@
+name: release-gate
+
+# One harvest of a real Fabric tenant, run only as a gate on a release. The offline suite
+# (tests.yml) proves the half of this package that does not talk to Fabric; this proves the
+# other half, and exists because a 400 on the first real lakehouse create reached PyPI while
+# every offline test stayed green.
+#
+# No push trigger and no schedule: it writes the real context_layer lakehouse and bills the
+# capacity, so it runs when a tag is being published and not otherwise.
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write          # the OIDC assertion; there is no client secret anywhere
+
+# It writes one shared lakehouse, so two runs must never overlap - and a queued release must
+# wait rather than be cancelled.
+concurrency:
+  group: context-layer-tenant
+  cancel-in-progress: false
+
+jobs:
+  harvest:
+    runs-on: ubuntu-latest
+    # The federated credential's subject is repo:<owner>/<repo>:environment:release, which is
+    # why this is here: the gate runs on a tag push, so a branch subject would never match and
+    # a tag subject would need a new credential per release.
+    environment: release
+    env:
+      # The only Azure inputs. fabcontext mints every token it needs - OneLake storage, the
+      # Fabric control plane, Power BI - by exchanging a fresh GitHub OIDC assertion itself, so
+      # there is no azure/login step and no `az` on this runner. See _fabric/auth.py.
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Same pins as tests.yml: duckdb and deltalake at the versions the Fabric Python 3.12
+      # runtime ships, so a green run says something about where this actually runs.
+      - name: Install
+        run: pip install -e . -r requirements-dev.txt
+
+      - name: Harvest a real tenant
+        run: pytest -m tenant -q

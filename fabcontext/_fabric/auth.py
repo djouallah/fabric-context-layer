@@ -9,7 +9,10 @@ Acquisition order, cheapest first:
 1. **inside a Fabric notebook** - `notebookutils.credentials.getToken`, which is the only
    path that matters in production and needs no sign-in at all;
 2. an already-minted token in the environment;
-3. **azure-identity** - Azure CLI, then an interactive browser but only on a TTY, so a
+3. **GitHub Actions workload-identity federation** - a fresh OIDC assertion exchanged for a
+   token, per acquisition, which is the one source that still works after an hour on a runner
+   and the only way CI harvests a real tenant with no secret stored anywhere;
+4. **azure-identity** - Azure CLI, then an interactive browser but only on a TTY, so a
    headless run can never hang waiting for a redirect that will not come.
 
 Tokens are cached per (tenant, scope) and re-acquired near expiry, read out of the JWT
@@ -34,6 +37,10 @@ POWERBI_SCOPE = "https://analysis.windows.net/powerbi/api/.default"
 _ENV = {STORAGE_SCOPE: "AZURE_STORAGE_TOKEN", FABRIC_SCOPE: "FABRIC_TOKEN",
         POWERBI_SCOPE: "POWERBI_TOKEN"}
 
+# The assertion fetch plus the Entra exchange is a short network hop that intermittently times
+# out; one 15s timeout must not lose the token and fail a release.
+_OIDC_ATTEMPTS = 3
+
 _CACHE: Dict[tuple, str] = {}
 _LOCK = threading.RLock()
 _EXPIRY: Dict[str, Optional[float]] = {}
@@ -49,6 +56,52 @@ def _notebook_token(audience: str) -> Optional[str]:
         return notebookutils.credentials.getToken(audience) or None
     except Exception:                               # noqa: BLE001 - audience may be unknown
         return None
+
+
+def _github_oidc_assertion() -> Optional[str]:
+    """A fresh GitHub Actions OIDC JWT to present to Entra as a client assertion, or None off a
+    runner.
+
+    The request endpoint stays live for the whole job and mints a new JWT on every call, so this
+    can re-authenticate long after the first token expired - which is what a harvest running
+    longer than an hour needs.
+    """
+    import urllib.request
+
+    url = os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL")
+    bearer = os.environ.get("ACTIONS_ID_TOKEN_REQUEST_TOKEN")
+    if not (url and bearer):
+        return None
+    # The audience the federated credential is registered against.
+    url += ("&" if "?" in url else "?") + "audience=api://AzureADTokenExchange"
+    req = urllib.request.Request(url, headers={"Authorization": "Bearer " + bearer})
+    with urllib.request.urlopen(req, timeout=15) as resp:    # nosec - GitHub-internal endpoint
+        return json.loads(resp.read().decode()).get("value")
+
+
+def github_oidc_token(scope: str) -> Optional[str]:
+    """A token for `scope` by workload-identity federation: exchange a fresh GitHub OIDC JWT for
+    it, with no client secret stored anywhere.
+
+    None unless running under GitHub Actions with `id-token: write` and AZURE_CLIENT_ID /
+    AZURE_TENANT_ID set, so on a laptop this costs one dict lookup and falls through to the CLI.
+    """
+    client_id = os.environ.get("AZURE_CLIENT_ID")
+    tenant_id = os.environ.get("AZURE_TENANT_ID")
+    if not (client_id and tenant_id and os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL")):
+        return None
+    try:
+        from azure.identity import ClientAssertionCredential
+    except ImportError:
+        return None
+    credential = ClientAssertionCredential(tenant_id, client_id, _github_oidc_assertion)
+    for attempt in range(_OIDC_ATTEMPTS):
+        try:
+            return credential.get_token(scope).token
+        except Exception:                           # noqa: BLE001 - a short, flaky network hop
+            if attempt < _OIDC_ATTEMPTS - 1:
+                time.sleep(float(2 ** attempt))     # 1s, 2s - ride out a transient timeout
+    return None
 
 
 def azure_identity_token(scope: str, interactive: bool = True) -> Optional[str]:
@@ -124,6 +177,7 @@ def _cached(scope: str, acquire: Callable[[], Optional[str]]) -> Optional[str]:
 def _token(scope: str, audience: str, hint: str) -> str:
     token = _cached(scope, lambda: (_notebook_token(audience)
                                     or os.environ.get(_ENV.get(scope, ""))
+                                    or github_oidc_token(scope)
                                     or azure_identity_token(scope)))
     if token:
         return token
@@ -155,7 +209,8 @@ def kusto_token(cluster_uri: str) -> str:
     if token:
         return token
     scope = cluster_uri.rstrip("/") + "/.default"
-    token = _cached(scope, lambda: azure_identity_token(scope))
+    token = _cached(scope, lambda: (github_oidc_token(scope)
+                                    or azure_identity_token(scope)))
     if token:
         return token
     raise RuntimeError("no token for " + cluster_uri + "; run `az login --scope " + scope + "`")

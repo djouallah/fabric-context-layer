@@ -65,9 +65,12 @@ def open_lakehouse(workspace: str, lakehouse: str,
         raise FabricError(
             "the workspace " + repr(workspace) + " is not on a Fabric capacity, so no "
             "lakehouse can be created in it. Assign it one and run this again.")
-    lh_id = ws.create_lakehouse(lakehouse, schemas=True, folder=folder)
-    if folder and not created:
-        ws.move_item(lh_id, folder)          # create_lakehouse leaves an existing one put
+    lh_id = ws.create_lakehouse(lakehouse, schemas=True)
+    if folder:
+        # Always, not only on a create: the create body cannot carry a folder, so this is the
+        # one path that places anything, and a lakehouse someone made by hand ends up filed
+        # the same as one this made.
+        ws.move_item(lh_id, folder)
     store = onelake.OneLakeStore(ws.id, lh_id)
     store.workspace = ws.display_name
     store.lakehouse = lakehouse

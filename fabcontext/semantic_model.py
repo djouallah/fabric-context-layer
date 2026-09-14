@@ -212,7 +212,11 @@ def ensure(con, store, name: str = DEFAULT_NAME, folder: Optional[str] = None) -
     ws = Workspace(workspace_id)
     schema = {table: columns(con, table) for table in TABLES}
     parts = definition_parts(bim(workspace_id, item_id, schema, name))
-    model_id = ws.create_semantic_model(name, parts, folder=folder)
+    model_id = ws.create_semantic_model(name, parts)
+    if folder:
+        # Before the reframe, so a tenant that cannot file the icon fails nothing that looks
+        # like a framing failure. `move_item` swallows its own errors either way.
+        ws.move_item(model_id, folder)
     # A Direct Lake model that has never been framed answers every query with "cannot find
     # table", so the deploy is not finished until the reframe is.
     ws.refresh_semantic_model(model_id)

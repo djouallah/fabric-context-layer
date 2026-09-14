@@ -76,6 +76,15 @@ to a temp folder so it needs no network, and must stay green. Use a venv built f
 otherwise resolves newer ones and the suite stops saying anything about production.
 `tests/test_publish.py` carries the published column contract, copied from `ask/db.py`;
 it must stay satisfied after any change to what `fabcontext/graph.py` publishes.
+
+`pytest` means the offline suite and must keep meaning it - `addopts` in `pyproject.toml`
+deselects the `tenant` marker. The one marked test, `tests/integration/test_release_gate.py`,
+harvests a real tenant into the real `context_layer` and runs only from
+`.github/workflows/release-gate.yml`, which `publish.yml` gates a tag on. It authenticates by
+GitHub workload-identity federation - `github_oidc_token` in `_fabric/auth.py`, no secret
+stored - so a release cannot reach PyPI without a harvest of a real tenant having succeeded.
+That gate exists because an offline suite stayed green while the first real lakehouse create
+400'd: anything that only fails against Fabric has to be covered there or not at all.
 `--json` is a global flag on `python -m ask` and goes before the subcommand.
 
 **There is no SQL on the client, and adding one would undo the point.** A number comes from
