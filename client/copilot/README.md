@@ -10,7 +10,7 @@ but the skill is a perfectly good one.
 ```bash
 mkdir -p .claude/skills/fabric-context
 curl -fsSL -o .claude/skills/fabric-context/SKILL.md \
-  https://raw.githubusercontent.com/djouallah/fabric-context-layer/main/agent/SKILL.md
+  https://raw.githubusercontent.com/djouallah/fabric-context-layer/main/client/SKILL.md
 
 az login
 ```

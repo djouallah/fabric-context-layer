@@ -9,7 +9,7 @@ asked from anywhere.
 ```bash
 mkdir -p ~/.claude/skills/fabric-context
 curl -fsSL -o ~/.claude/skills/fabric-context/SKILL.md \
-  https://raw.githubusercontent.com/djouallah/fabric-context-layer/main/agent/SKILL.md
+  https://raw.githubusercontent.com/djouallah/fabric-context-layer/main/client/SKILL.md
 
 az login
 ```
@@ -18,7 +18,7 @@ PowerShell:
 
 ```powershell
 $dir = "$HOME\.claude\skills\fabric-context"; mkdir $dir -Force
-iwr https://raw.githubusercontent.com/djouallah/fabric-context-layer/main/agent/SKILL.md -OutFile $dir\SKILL.md
+iwr https://raw.githubusercontent.com/djouallah/fabric-context-layer/main/client/SKILL.md -OutFile $dir\SKILL.md
 
 az login
 ```

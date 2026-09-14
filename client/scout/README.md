@@ -10,7 +10,7 @@ setup is one paste, and Scout does the rest.
 Set up the fabric-context skill on this machine, then use it once.
 
 1. Create ~/.copilot/skills/fabric-context/ and download
-   https://raw.githubusercontent.com/djouallah/fabric-context-layer/main/agent/SKILL.md
+   https://raw.githubusercontent.com/djouallah/fabric-context-layer/main/client/SKILL.md
    into it as SKILL.md.
 2. Run `az account show`. If it fails, tell me to run `az login` and stop here.
 3. Read the skill you just downloaded, follow it to find context_model, then run its

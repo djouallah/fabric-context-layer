@@ -1,4 +1,4 @@
-"""The two instruction files in `agent/`, against what can silently break them.
+"""The two instruction files in `client/`, against what can silently break them.
 
 Neither is executed by anything here - one is pasted into a portal, the other is dropped into
 a skills folder on someone else's machine - so what can be tested is the text. Three things
@@ -8,7 +8,7 @@ fail silently in production:
 - a renamed published column returns an *empty table*, which an agent reads as "the term is
   not defined" rather than as an error;
 - a setup step that reaches for the clone or the harvest puts the whole repo back in front of
-  someone who only wanted a number, which is the thing `agent/` exists to prevent - and so
+  someone who only wanted a number, which is the thing `client/` exists to prevent - and so
   does any explanation of how the context was built, which is the other side of the repo.
 """
 from __future__ import annotations
@@ -20,9 +20,9 @@ import re
 from tests.test_publish import OPTIONAL, REQUIRED
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-AGENT = os.path.join(ROOT, "agent")
-M365 = os.path.join(AGENT, "m365", "instructions.md")
-SKILL = os.path.join(AGENT, "SKILL.md")
+CLIENT = os.path.join(ROOT, "client")
+M365 = os.path.join(CLIENT, "m365", "instructions.md")
+SKILL = os.path.join(CLIENT, "SKILL.md")
 
 # Copilot Studio and declarative agents both cap instructions at 8,000 characters. Leave room:
 # community reports say the combined system text can trip an internal ceiling sooner.
@@ -32,8 +32,8 @@ HEADROOM = 0.85
 _REF = re.compile(r"'(terms|definitions|aliases)'\[(\w+)\]")
 
 # What the install-free side must never ask of the person asking a question, and must never
-# explain either. `agent/` is the answering side; the context already exists, and how it came
-# to exist is described in docs/guide.md and nowhere under agent/.
+# explain either. `client/` is the answering side; the context already exists, and how it came
+# to exist is described in docs/guide.md and nowhere under client/.
 _CLONE = ("git clone", "pip install", "python -m ask", "python -m fabcontext",
           "fabcontext", "harvest", "context.md")
 
@@ -81,14 +81,14 @@ def test_both_are_told_which_ids_to_run_the_measure_on():
 
 
 def test_the_install_free_side_never_reaches_for_the_clone():
-    """The point of `agent/`: answering a question costs a Power BI connection and two ids.
+    """The point of `client/`: answering a question costs a Power BI connection and two ids.
 
     Any of these creeping into a skill, a README or a setup prompt puts the harvest repo back
     in the way, which is exactly the friction this folder replaced. Every markdown file under
-    agent/ is held to it, not just the ones that get installed.
+    client/ is held to it, not just the ones that get installed.
     """
-    paths = sorted(glob.glob(os.path.join(AGENT, "**", "*.md"), recursive=True))
-    assert paths, "no markdown under agent/"
+    paths = sorted(glob.glob(os.path.join(CLIENT, "**", "*.md"), recursive=True))
+    assert paths, "no markdown under client/"
     for path in paths:
         body = _read(path).lower()
         # The skill's "Never" section names them in order to forbid them; that is the one

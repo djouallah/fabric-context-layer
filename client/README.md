@@ -1,6 +1,6 @@
-# agent/ - asking the questions
+# client/ - asking the questions
 
-This is the asking side. It reads one semantic model, named `context_model`, and it installs
+This is the client side. It reads one semantic model, named `context_model`, and it installs
 nothing. How that model comes to exist is the other side of the repo, and it is described
 in [../docs/guide.md](../docs/guide.md), not here.
 

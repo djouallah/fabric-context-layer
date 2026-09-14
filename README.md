@@ -40,12 +40,12 @@ first - and every later one updates it. It returns the URL an agent asks against
 
 The ranking, what is harvested, the schema, how to ask, the limits: **[docs/guide.md](docs/guide.md)**.
 
-## Agent
+## Client
 
 The agent can be anything - Claude, GitHub Copilot, Scout, Microsoft 365 Copilot. It installs
 nothing and needs one thing: a read-only Power BI connection. It finds the published ranking
 itself, at an address that is the same in every tenant. One DAX query asks which definition
-wins; a second runs it. One folder per tool: **[agent/](agent/)**.
+wins; a second runs it. One folder per tool: **[client/](client/)**.
 
 ## Licence
 

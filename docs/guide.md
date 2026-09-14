@@ -61,7 +61,7 @@ a fixed address: a lakehouse called `context_layer`, in a workspace called `cont
 a Fabric capacity, with you as Contributor on it. `fabcontext` looks that workspace up and
 never creates one, so the first run fails with a sentence telling you to make it.
 
-The fixed address is the point. `agent/` has no clone, no config file and nothing to read but
+The fixed address is the point. `client/` has no clone, no config file and nothing to read but
 the tenant itself, so it finds the context by looking up that workspace name and then the
 semantic model `context_model` inside it. A context published wherever the first workspace
 named happened to be is a context nothing can find without being told where it is.
@@ -176,7 +176,7 @@ questions to it.
 Anyone who only wants a number installs nothing. The harvest also publishes the ranking as a
 semantic model (`context_model`), so one DAX query says which definition wins and carries the
 ids to run it against, and a second runs it - over a read-only Power BI connection and no
-clone at all. That is [agent/](../agent/), one folder per tool: Claude, GitHub Copilot, Scout,
+clone at all. That is [client/](../client/), one folder per tool: Claude, GitHub Copilot, Scout,
 Microsoft 365 Copilot. The trade is what the model exposes: `terms`, `definitions` and
 `aliases` are the ranking, so that side answers *what is X* and *which definition wins*, and
 says plainly that lineage, reports and table detail are out of its reach.
@@ -404,10 +404,10 @@ on a report-free workspace definitions are ordered on authority, model usage and
 | `ask/evals.py` | the generated benchmark and its runner |
 | `.claude/skills/fabric-context/SKILL.md` | in this clone: how Claude Code uses `python -m ask` |
 | `.github/copilot-instructions.md` | in this clone: the rule that sends tenant questions to that skill |
-| `agent/SKILL.md` | no clone: the protocol over Power BI alone, installed by Claude, Copilot and Scout alike |
-| `agent/<tool>/README.md` | no clone: where each tool wants that file, and how it signs in |
+| `client/SKILL.md` | no clone: the protocol over Power BI alone, installed by Claude, Copilot and Scout alike |
+| `client/<tool>/README.md` | no clone: where each tool wants that file, and how it signs in |
 | `fabcontext/semantic_model.py` | the context's own Direct Lake model - the ranking, queryable as DAX |
-| `agent/m365/instructions.md` | the M365 Copilot agent's instructions - see [agent/m365/](../agent/m365/) |
+| `client/m365/instructions.md` | the M365 Copilot agent's instructions - see [client/m365/](../client/m365/) |
 
 ## Known limits
 
