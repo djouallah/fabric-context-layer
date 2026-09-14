@@ -95,10 +95,16 @@ def github_oidc_token(scope: str) -> Optional[str]:
     except ImportError:
         return None
     credential = ClientAssertionCredential(tenant_id, client_id, _github_oidc_assertion)
+    debug = bool(os.environ.get("FABCONTEXT_AUTH_DEBUG"))
     for attempt in range(_OIDC_ATTEMPTS):
         try:
             return credential.get_token(scope).token
-        except Exception:                           # noqa: BLE001 - a short, flaky network hop
+        except Exception as exc:                    # noqa: BLE001 - a short, flaky network hop
+            # A federation that is misconfigured fails here every time and looks identical to a
+            # timeout from the outside: the caller only sees "could not acquire a token", which
+            # says nothing about the subject, the audience or the consent that is missing.
+            if debug:
+                print("[auth] github oidc failed for " + scope + ": " + repr(exc), flush=True)
             if attempt < _OIDC_ATTEMPTS - 1:
                 time.sleep(float(2 ** attempt))     # 1s, 2s - ride out a transient timeout
     return None

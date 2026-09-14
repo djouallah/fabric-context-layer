@@ -34,6 +34,10 @@ jobs:
       # there is no azure/login step and no `az` on this runner. See _fabric/auth.py.
       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      # A token that cannot be had fails the gate either way; without this the log says only
+      # "could not acquire a token", which does not distinguish a wrong subject from a missing
+      # consent from a timeout. Nothing secret is printed - the assertion is never logged.
+      FABCONTEXT_AUTH_DEBUG: '1'
     steps:
       - uses: actions/checkout@v4
 
