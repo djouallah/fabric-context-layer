@@ -78,9 +78,11 @@ class Workspace:
             return resp.json()["id"]
         if resp.status_code == 202:
             return await_lro_item_id(self.token, resp)
-        resp.raise_for_status()
-        raise FabricError("unexpected status " + str(resp.status_code)
-                          + " creating the lakehouse: " + resp.text[:200])
+        # Fabric says why in the body, and `raise_for_status` does not carry it - a 400 here
+        # is a name already taken, a capacity that cannot hold a lakehouse, or a folder id
+        # this workspace does not have, and the three are not guessable from the status.
+        raise FabricError("could not create the lakehouse " + repr(name) + " (HTTP "
+                          + str(resp.status_code) + "): " + resp.text[:400])
 
     def list_semantic_models(self) -> List[Dict]:
         return self.list_items("semanticModels")
