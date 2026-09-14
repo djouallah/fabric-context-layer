@@ -6,6 +6,9 @@ on:
 
 permissions:
   contents: read
+  # A called workflow cannot ask for more than its caller holds, and the gate authenticates to
+  # Fabric by OIDC. Without this the whole run fails at startup, before any job.
+  id-token: write
 
 concurrency:
   group: pypi
