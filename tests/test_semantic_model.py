@@ -35,7 +35,7 @@ def test_data_types_map_and_fall_back_to_string():
     assert sm.data_type("STRUCT(a INTEGER)") == "string"
 
 
-def test_the_three_tables_are_direct_lake_over_the_lakehouse(con):
+def test_the_four_tables_are_direct_lake_over_the_lakehouse(con):
     model = _bim(con)
     names = [t["name"] for t in model["model"]["tables"]]
     assert names == list(sm.TABLES)
@@ -66,6 +66,29 @@ def test_our_own_parser_reads_the_model_we_emit(con):
     for table in model["model"]["tables"]:
         assert patterns.partition_table(table["partitions"][0], table["name"]) == (
             "dbo", table["name"])
+
+
+def test_the_model_is_curated_and_every_column_says_what_it_means(con):
+    """The field list is what a metadata-driven agent reads. Every column the model exposes
+    is named in COLUMNS with a description and exists in the built table; a published column
+    not named there is deliberately not in the model."""
+    model = _bim(con)
+    for table in model["model"]["tables"]:
+        built = {name for name, _t in sm.columns(con, table["name"])}
+        assert table.get("description"), table["name"]
+        names = [c["name"] for c in table["columns"]]
+        assert names == [n for n, _d in sm.COLUMNS[table["name"]]], table["name"]
+        for column in table["columns"]:
+            assert column["name"] in built, (table["name"], column["name"])
+            assert column.get("description"), (table["name"], column["name"])
+    exposed = {c["name"] for c in _table(model, "answers")["columns"]}
+    for needed in ("alias_norm", "measure", "model_id", "workspace_id", "dax", "confidence",
+                   "rivals"):
+        assert needed in exposed, needed
+    assert "def_id" not in {c["name"] for c in _table(model, "definitions")["columns"]}
+    # answers stands alone: one filter, no relationship to ride.
+    assert not any(r["fromTable"] == "answers" or r["toTable"] == "answers"
+                   for r in model["model"]["relationships"])
 
 
 def test_aliases_filter_through_to_definitions(con):

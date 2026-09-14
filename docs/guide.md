@@ -175,30 +175,22 @@ it, the run says so and the context is still published.
 
 What it exposes, and why it is shaped this way ([fabcontext/semantic_model.py](../fabcontext/semantic_model.py)):
 
-```
-aliases [*] ──┐
-              ├──> terms [1] ──> [*] definitions
-              │    term_id          term_id, rank, score, conflicting
-              │    label            name, workspace_id, owner_item_id
-              │    n_definitions    owner_item_name, table_name, expression
-              │    conflicting
-```
+- `answers` is what a client reads: one row per spelling of every term, carrying rank 1
+  already picked - the `measure` to call, the `model` that owns it and its `model_id` and
+  `workspace_id`, the `expression`, a ready-to-run `dax`, a `confidence`, and `rivals`, the
+  other definitions in one line. One equality filter on `alias_norm` with the user's own
+  wording, and the row is the answer: no join, no rank to pick, nothing to get wrong.
+- `definitions` is every competing definition, ranked, with `rank`, `score`, `confidence`,
+  the owning model's two ids and the `expression` - for the two questions `answers` cannot
+  settle: the user named a model, or asked to compare.
+- `terms` is one row per business term; `aliases` is every spelling of every term, related to
+  `terms` both ways so a filter on a spelling reaches `definitions`.
 
-- `definitions` is the fact - one row per competing definition, carrying `rank` and `score`.
-- `terms` is the dimension, one row per business term.
-- `aliases` holds every spelling of every term, which is what lets a lookup by the user's own
-  wording land.
-- `workspace_id` and `owner_item_id` are the two GUIDs an agent needs to run the measure on
-  the model that owns it.
-
-The `aliases` relationship is **bidirectional**, deliberately. Filters flow one-to-many, so
-filtering a spelling on the many side would never reach `terms`, let alone propagate on to
-`definitions`, and every lookup by an alias would come back empty - which an agent reads as
-"the term is not defined" rather than as a bug.
-
-`definitions` also carries a `Dax Template` measure returning a ready-to-run
-`EVALUATE ROW("v", CALCULATE([<measure>]))` for the definition in filter context, so an agent
-can copy the query rather than compose one.
+It is a curated subset, not the tables as published: no `def_id`, no signal internals, no
+margin - and every table and column carries a description, which is what a metadata-driven
+agent reads off the field list. `definitions` also carries a `Dax Template` measure returning
+a ready-to-run `EVALUATE ROW("v", CALCULATE([<measure>]))` for the definition in filter
+context.
 
 The line between what is published here and what is not is what only the harvest can know.
 A ranking is derived from 28 days of query history, endorsement and usage, none of which an
@@ -210,10 +202,9 @@ stale copy.
 
 How a question flows:
 
-1. The client finds `context_model` by name and asks it for the term, by any of its
-   spellings. The rows that come back are the term's definitions, ranked, each with the
-   measure, the model that owns it, its two ids, the DAX and a confidence. Rank 1 is the
-   answer; a conflicting term says so.
+1. The client finds `context_model` by name and asks `answers` for the term, by any of its
+   spellings. The row that comes back is rank 1: the measure, the model that owns it, its
+   two ids, the DAX and a confidence; a conflicting term says so and names its rivals.
 2. The owning model is asked for its own column names and values - `INFO.VIEW.COLUMNS()` -
    so "NSW" becomes `'<table>'[<column>] = "NSW"` from the data, not from memory.
 3. The measure runs by name through the Power BI executeQueries API, so the governed logic

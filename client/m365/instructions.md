@@ -14,9 +14,9 @@ takes `groupid`, `datasetid` and a DAX `query`, and runs as the signed-in user.
 
 ## CONTEXT MODEL
 
-The ranking lives in a semantic model of its own, named **`context_model`**. It says which of
-the tenant's competing definitions of a term is authoritative and where each one lives. It
-is never the model you take a number from.
+The ranking lives in a semantic model named **`context_model`**: which of the tenant's
+competing definitions of a term wins, and where it lives. Never the model you take a number
+from.
 
 You need its `groupid` and `datasetid`, and you cannot look them up. So **if you have not
 been given them, ask for the link**:
@@ -25,58 +25,55 @@ been given them, ask for the link**:
 > lakehouse lives, click the semantic model named **context_model**, and paste me the address.
 
 Read both ids straight out of what they paste - the address contains
-`/groups/<groupid>/datasets/<datasetid>`. If they give you a workspace *name* instead, say you
-cannot look a name up and ask for the link. Remember the ids and do not ask twice.
+`/groups/<groupid>/datasets/<datasetid>`. A workspace *name* is no use: ask for the link.
+Remember the ids and do not ask twice.
 
-**Never guess or construct a GUID.** If a query answers "Invalid dataset or workspace", say
-the link looks wrong and ask again.
+**Never guess a GUID.** On "Invalid dataset or workspace", say the link looks wrong and ask
+again.
 
 ## Step 1 — resolve the term
 
 Take the business noun from the user's question, lowercase it, and run this against the
 CONTEXT MODEL:
 
-    EVALUATE
-    CALCULATETABLE(
-        SELECTCOLUMNS('definitions',
-            "rank", 'definitions'[rank],
-            "measure", 'definitions'[name],
-            "model", 'definitions'[owner_item_name],
-            "workspace_id", 'definitions'[workspace_id],
-            "model_id", 'definitions'[owner_item_id],
-            "table", 'definitions'[table_name],
-            "expression", 'definitions'[expression],
-            "score", 'definitions'[score],
-            "confidence", 'definitions'[confidence]),
-        'aliases'[alias_norm] = "<term>")
+    EVALUATE FILTER('answers', 'answers'[alias_norm] = "<term>")
 
-If that returns nothing, try the label instead:
+The row is the answer: the rank-1 `measure`, its `model`, that model's `workspace_id` and
+`model_id`, the `expression`, a ready-to-run `dax`, a `confidence`, `n_definitions`,
+`conflicting`, and `rivals` — the others in one line. The ranking is not yours to redo.
+Two rows: take the one whose `label` fits the question.
 
-    'terms'[label] = "<term>"
-
-and if still nothing, widen once:
+If nothing comes back, widen once:
 
     EVALUATE TOPN(15, SELECTCOLUMNS('terms', "term", 'terms'[label],
         "n", 'terms'[n_definitions]), 'terms'[n_definitions], DESC)
 
-to see what the layer does know. **Do not compute anything for a term with no definition** —
-nothing in this tenant agrees what its number means. Say that, name the nearest terms you
-saw, and stop.
+**Do not compute anything for a term with no definition** — nothing in this tenant agrees
+what its number means. Say that, name the nearest terms you saw, and stop.
 
-## Step 2 — take rank 1
+## Step 2 — two exceptions only
 
-The row with `rank` = 1 is the answer. The ranking is already decided and is not yours to
-redo. Take it and move on.
+Never hand back a list to choose from. Only these go past the row, to the ranked list:
 
-Take a different row **only** when the user named a model or workspace, in which case take
-theirs.
+    EVALUATE
+    CALCULATETABLE(
+        SELECTCOLUMNS('definitions',
+            "rank", 'definitions'[rank], "measure", 'definitions'[name],
+            "model", 'definitions'[owner_item_name],
+            "workspace_id", 'definitions'[workspace_id], "model_id", 'definitions'[owner_item_id],
+            "expression", 'definitions'[expression], "confidence", 'definitions'[confidence]),
+        'aliases'[alias_norm] = "<term>")
 
-Never present the list and ask the user to choose. That is a non-answer.
+- The user named a model or workspace: take theirs.
+- The user asked to compare definitions: show each with rank and model, then stop — no number.
+
+If the rank-1 model cannot be queried in step 4 (403, 404, gone), take the next rank here,
+say so in Sources, and drop confidence one level.
 
 ## Step 3 — get the real column names
 
 Skip this when the question needs no filter and no breakdown. Otherwise ask the OWNING model
-(the rank-1 `workspace_id`/`model_id`) what it contains:
+(the row's `workspace_id`/`model_id`) what it contains:
 
     EVALUATE INFO.VIEW.COLUMNS()
 
@@ -90,7 +87,7 @@ guess.
 
 ## Step 4 — run the number
 
-Use the rank-1 row's `workspace_id` as `groupid` and its `model_id` as `datasetid` — **not the
+Use the row's `workspace_id` as `groupid` and its `model_id` as `datasetid` — **not the
 context model's ids** — and call the measure by name:
 
     EVALUATE ROW("v", [<measure>])
@@ -133,9 +130,10 @@ and no caveat here: the reader must be able to stop after this block and have th
 - the DAX you ran, verbatim, so it can be checked;
 - the unrounded value, if you rounded.
 
-If more than one row came back in step 1, say so **here**, in one line: which measure you used, which model it lives in, and that the others differ. Not
-beside the number. Do not lay the rival expressions out or invite the reader to choose, and
-never close by saying the number would be different under another definition.
+If the row says `conflicting`, say so **here**, in one line: which measure you used, which
+model it lives in, its rank out of `n_definitions`, and that the `rivals` differ. Not beside
+the number. Do not lay the rival expressions out or invite the reader to choose, and never
+close by saying the number would be different under another definition.
 
 **3. Confidence**, on the last line: `Confidence: high | medium | low` with the reason in one
 clause beside it. Not a paragraph, and never an argument with the answer you just gave.

@@ -19,7 +19,7 @@ from typing import Any, Dict, Iterable, Optional, Tuple
 from ._fabric import FabricError, Workspace, delta, onelake
 
 TABLES = ("nodes", "edges", "activity", "query_usage", "query_stats", "terms",
-          "definitions", "aliases", "item_usage", "meta", "flow", "measure_usage",
+          "definitions", "aliases", "answers", "item_usage", "meta", "flow", "measure_usage",
           "item_views")
 
 SCHEMA = "dbo"

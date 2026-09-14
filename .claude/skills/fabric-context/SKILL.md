@@ -88,29 +88,17 @@ Take the business noun from the question, lowercase it, and run this against the
 model**:
 
 ```dax
-EVALUATE
-CALCULATETABLE(
-    SELECTCOLUMNS('definitions',
-        "rank", 'definitions'[rank],
-        "measure", 'definitions'[name],
-        "model", 'definitions'[owner_item_name],
-        "workspace_id", 'definitions'[workspace_id],
-        "model_id", 'definitions'[owner_item_id],
-        "table", 'definitions'[table_name],
-        "expression", 'definitions'[expression],
-        "score", 'definitions'[score],
-        "confidence", 'definitions'[confidence]),
-    'aliases'[alias_norm] = "<term>")
+EVALUATE FILTER('answers', 'answers'[alias_norm] = "<term>")
 ```
 
-`aliases` holds every spelling of every term, which is what lets the user's own wording land.
-If that returns nothing, try the label instead:
+`answers` is one row per spelling of every term, and the row is the answer already: the
+rank-1 `measure`, the `model` that owns it, that model's `workspace_id` and `model_id`, the
+`expression`, a ready-to-run `dax`, a `confidence`, `n_definitions`, whether they are
+`conflicting`, and `rivals` - the other definitions, ranked, in one line. The ranking is
+already decided and is not yours to redo. Take the row and move on. Two rows means the
+spelling names two terms; take the one whose `label` fits the question.
 
-```dax
-    'terms'[label] = "<term>"
-```
-
-and if still nothing, widen once to see what the layer does know:
+If nothing comes back, widen once to see what the layer does know:
 
 ```dax
 EVALUATE TOPN(15, SELECTCOLUMNS('terms', "term", 'terms'[label],
@@ -121,22 +109,39 @@ then say the term is not defined here, name the nearest terms you saw, and stop.
 compute anything for a term with no definition** - nothing in this tenant agrees what its
 number means, and inventing one is exactly what this layer exists to prevent.
 
-## Step 2 - take rank 1
+## Step 2 - the two exceptions
 
-The row with `rank` = 1 is the answer. The ranking is already decided and is not yours to
-redo. Take it and move on.
+The row from step 1 is the answer. Never present a list and ask the user to choose; that is
+a non-answer. Two questions, and only these, go past it to the ranked list:
 
-Take a different row **only** when the user named a model or workspace, in which case take
-theirs.
+```dax
+EVALUATE
+CALCULATETABLE(
+    SELECTCOLUMNS('definitions',
+        "rank", 'definitions'[rank],
+        "measure", 'definitions'[name],
+        "model", 'definitions'[owner_item_name],
+        "workspace_id", 'definitions'[workspace_id],
+        "model_id", 'definitions'[owner_item_id],
+        "expression", 'definitions'[expression],
+        "confidence", 'definitions'[confidence]),
+    'aliases'[alias_norm] = "<term>")
+```
 
-Never present the list and ask the user to choose. That is a non-answer.
+- **The user named a model or workspace.** Take their definition's row instead of rank 1.
+- **The user asked to compare the definitions.** That is the one question where laying the
+  expressions out is the answer: each with its rank and model, then stop - no number.
+
+And one fallback: if the rank-1 model cannot be queried in step 4 - a 403, a 404, a model
+that is gone, an error no fix to the query addresses - take the next rank from this list,
+say so in Sources, and drop the confidence one level.
 
 ## Step 3 - get the real column names
 
 Skip this when the question needs no filter and no breakdown: `EVALUATE ROW("v", [<measure>])`
 names no column, so there is nothing to look up.
 
-Otherwise, ask the **owning** model what it contains - the rank-1 row's `workspace_id` and
+Otherwise, ask the **owning** model what it contains - the row's `workspace_id` and
 `model_id`, the same ids you are about to run the number on:
 
 ```dax
@@ -163,8 +168,8 @@ different. A column inferred from DAX you read is a guess, and this is the guess
 
 ## Step 4 - run the number
 
-Use the rank-1 row's `workspace_id` and `model_id` in the URL - **not the context model's
-ids** - and call the measure by name:
+Use the row's `workspace_id` and `model_id` in the URL - **not the context model's ids** -
+and call the measure by name:
 
 ```dax
 EVALUATE ROW("v", [<measure>])
@@ -216,10 +221,10 @@ and no caveat here: the reader must be able to stop after this block and have th
 - the DAX you ran, verbatim, so it can be checked;
 - the unrounded value, if you rounded.
 
-If more than one row came back in step 1, say so **here**, in one line: which measure you
-used, which model it lives in, and that the others differ. Not beside the number. Do not lay
-the rival expressions out, do not invite the reader to choose, and never close by saying the
-number would be different under another definition.
+If the row says `conflicting`, say so **here**, in one line: which measure you used, which
+model it lives in, its rank out of `n_definitions`, and that the `rivals` differ. Not beside
+the number. Do not lay the rival expressions out, do not invite the reader to choose, and
+never close by saying the number would be different under another definition.
 
 **3. Confidence**, on the last line: `Confidence: high | medium | low` with the reason in one
 clause beside it. Not a paragraph, and never an argument with the answer you just gave.
@@ -239,8 +244,8 @@ Never withhold the number in order to discuss definitions.
 
 ## What this cannot answer
 
-`context_model` carries three tables - `terms`, `definitions` and `aliases` - and nothing
-else. Lineage (*what feeds X*), which reports use a measure, and how
+`context_model` carries four tables - `answers`, `terms`, `definitions` and `aliases` - the
+ranking, and nothing else. Lineage (*what feeds X*), which reports use a measure, and how
 often one is queried are **not reachable here**. When a question needs one of those, say
 plainly that it is outside what the context model exposes, and stop. Do not substitute a
 guess, and do not go looking for another source.

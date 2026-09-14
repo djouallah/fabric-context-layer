@@ -1,13 +1,15 @@
 """The context's own semantic model: the ranking, queryable as DAX.
 
-The published tables already are a star - `terms` is the dimension, `definitions` the fact of
-one row per competing definition, `aliases` every spelling of every term - so this builds the
-TMSL for a Direct Lake model over them and nothing is copied or reshaped.
+This is what a client reads, and the only thing. `answers` is one row per spelling of every
+term with rank 1 already picked - the measure, the owning model's two ids, a ready-to-run
+query, a confidence, the rivals - so an agent whose only tool is a DAX query needs one
+equality filter and nothing else. `definitions`, `terms` and `aliases` are the ranking behind
+it, for a user who named a model or asked to compare. Direct Lake over the published tables,
+so a harvest refreshes what it serves with nothing republished on the client side.
 
-Why it exists: an agent that can only run DAX (a Microsoft 365 Copilot agent, say, whose one
-tool is the Power BI connector) has no way to read `context.md`. Give it this model and the
-same tool that fetches a number also fetches the ranking - which is what keeps the ranked
-answer out of a prompt that would otherwise have to carry the whole tenant.
+It is a curated subset of what is published, not the tables as they are: `COLUMNS` names
+every column the model exposes and what it means, and that description is what a
+metadata-driven agent reads off the field list. `context.md` and `wiki/` carry everything.
 
 `aliases` relates to `terms` **bidirectionally** on purpose: filters flow one-to-many, so a
 lookup by a spelling on the many side would never reach `terms`, let alone propagate on to
@@ -21,13 +23,78 @@ import re
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
-# The three tables the model exposes. The line is not thin versus thick - it is what only the
-# harvest can know. A ranking is derived from 28 days of query history, endorsement and usage,
-# none of which an agent can see, so it is decided here and published. A model's own structure
-# - its tables, columns and their values - is live state that the model answers about itself in
-# one metadata call, so publishing it would only serve a stale copy: a column renamed after the
-# last harvest reads back as confidently wrong, which is worse than not being there at all.
-TABLES = ("terms", "definitions", "aliases")
+# The four tables the model exposes. The line is what only the harvest can know: a ranking is
+# derived from 28 days of query history, endorsement and usage, none of which an agent can see,
+# so it is decided here and published. A model's own structure - its tables, columns and their
+# values - is live state that the model answers about itself in one metadata call, so
+# publishing it would only serve a stale copy: a column renamed after the last harvest reads
+# back as confidently wrong, which is worse than not being there at all.
+TABLES = ("answers", "terms", "definitions", "aliases")
+
+# What each table is for, and every column it exposes with what it means. A published column
+# not named here is deliberately not in the model; one named here but missing from an older
+# publish is skipped rather than failing the build.
+DESCRIPTIONS = {
+    "answers": "One row per spelling of every business term, carrying the winning definition: "
+               "the measure to call, the model that owns it and its two ids, a ready-to-run "
+               "query, a confidence and the rivals. Filter alias_norm with the user's own "
+               "wording; the row is the answer.",
+    "terms": "One row per business term.",
+    "definitions": "Every competing definition of every term, ranked. For a user who named a "
+                   "model, or asked to compare; otherwise answers already holds rank 1.",
+    "aliases": "Every spelling of every term. Related to terms both ways, so a filter on a "
+               "spelling reaches definitions.",
+}
+COLUMNS = {
+    "answers": [
+        ("alias", "One spelling of a business term, as a measure or a person wrote it."),
+        ("alias_norm", "That spelling lowercased. Filter on this with the user's own wording."),
+        ("term_id", "The term this spelling belongs to."),
+        ("label", "The term's display name: its winning measure's own name."),
+        ("measure", "The rank-1 measure. Call it by this name; never re-derive its logic."),
+        ("model", "The semantic model that owns the rank-1 measure."),
+        ("model_id", "That model's id: the datasetid the DAX runs against."),
+        ("workspace_id", "That model's workspace id: the groupid the DAX runs against."),
+        ("table_name", "The table the measure sits on in its model, when it has one."),
+        ("expression", "The measure's DAX, for the Sources block. Never a source of filter "
+                       "or column names."),
+        ("dax", "A ready-to-run query for the number with no filter. Wrap the measure in "
+                "CALCULATE for one."),
+        ("confidence", "high, medium or low: how clear the ranking was. Read it; do not "
+                       "re-derive it."),
+        ("score", "The rank-1 definition's score."),
+        ("n_definitions", "How many definitions the term has in the tenant."),
+        ("conflicting", "True when those definitions disagree on their DAX."),
+        ("rivals", "The other definitions, ranked, as 'measure in model (rank n)'. Empty "
+                   "when there are none."),
+    ],
+    "terms": [
+        ("term_id", "The term's id, its words normalised."),
+        ("label", "The term's display name: its winning measure's own name."),
+        ("n_definitions", "How many definitions the term has in the tenant."),
+        ("conflicting", "True when those definitions disagree on their DAX."),
+    ],
+    "definitions": [
+        ("term_id", "The term this definition is of."),
+        ("rank", "1 is the answer. The ranking is decided at harvest and is not to be redone."),
+        ("name", "The measure's name. Call it by this name; never re-derive its logic."),
+        ("owner_item_name", "The semantic model that owns the measure."),
+        ("owner_item_id", "That model's id: the datasetid the DAX runs against."),
+        ("workspace_id", "That model's workspace id: the groupid the DAX runs against."),
+        ("table_name", "The table the measure sits on in its model, when it has one."),
+        ("expression", "The measure's DAX, for the Sources block. Never a source of filter "
+                       "or column names."),
+        ("endorsement", "Certified, Promoted, or empty."),
+        ("score", "The definition's score; higher ranks first."),
+        ("confidence", "high, medium or low: how clear the ranking was. Read it; do not "
+                       "re-derive it."),
+    ],
+    "aliases": [
+        ("term_id", "The term this spelling belongs to."),
+        ("alias", "One spelling of the term, as a measure or a person wrote it."),
+        ("alias_norm", "That spelling lowercased. Filter on this with the user's own wording."),
+    ],
+}
 KEY = "term_id"
 SCHEMA = "dbo"
 DEFAULT_NAME = "context_model"
@@ -70,16 +137,27 @@ def columns(con, table: str) -> List[Tuple[str, str]]:
             con.execute("DESCRIBE " + table).fetchall()]
 
 
-def _column(table: str, name: str, duckdb_type: str) -> Dict[str, Any]:
+def _column(table: str, name: str, duckdb_type: str, description: str) -> Dict[str, Any]:
     return {"name": name, "dataType": data_type(duckdb_type), "sourceColumn": name,
-            "lineageTag": _tag(table, name), "summarizeBy": "none"}
+            "description": description, "lineageTag": _tag(table, name),
+            "summarizeBy": "none"}
+
+
+def _curated(table: str, cols: List[Tuple[str, str]]) -> List[Tuple[str, str, str]]:
+    """[(name, duckdb_type, description)] for the columns of `table` the model exposes, in
+    COLUMNS order, skipping any the built table does not have."""
+    types = dict(cols)
+    return [(name, types[name], description)
+            for name, description in COLUMNS.get(table, []) if name in types]
 
 
 def _table(table: str, cols: List[Tuple[str, str]], measures: Optional[List[Dict]] = None):
     out: Dict[str, Any] = {
         "name": table,
+        "description": DESCRIPTIONS[table],
         "lineageTag": _tag(table),
-        "columns": [_column(table, name, kind) for name, kind in cols],
+        "columns": [_column(table, name, kind, description)
+                    for name, kind, description in _curated(table, cols)],
         "partitions": [{
             "name": table,
             "mode": "directLake",
@@ -123,8 +201,8 @@ def bim(workspace_id: str, lakehouse_id: str,
     No SQL endpoint anywhere: every table is an entity partition resolved against one shared
     expression on the lakehouse's OneLake root.
 
-    `schema` is {table: [(column, duckdb_type)]}; only `TABLES` are used, and a table missing
-    from it is left out rather than emitted empty.
+    `schema` is {table: [(column, duckdb_type)]}; only `TABLES` are used, only the columns in
+    `COLUMNS`, and a table missing from it is left out rather than emitted empty.
     """
     onelake = ("https://onelake.dfs.fabric.microsoft.com/" + workspace_id + "/"
                + lakehouse_id)

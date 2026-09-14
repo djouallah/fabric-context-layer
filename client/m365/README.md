@@ -21,23 +21,19 @@ The ranking lives in a semantic model named `context_model`, in the workspace ho
 context lakehouse. Open it in Fabric; the address carries the two ids the agent will ask for,
 as `/groups/<workspace-guid>/datasets/<model-guid>`.
 
-It has three tables. `definitions` is one row per competing definition, with its `rank`, the
-measure's `name`, and the `workspace_id` / `owner_item_id` of the model that owns it. `terms`
-is one row per business term. `aliases` is every spelling of every term, which is what lets a
-lookup by the user's own wording land.
+It has four tables. `answers` is what the agent reads: one row per spelling of every term,
+carrying the winning definition - the measure to call, the model that owns it and its
+`workspace_id` / `model_id`, a ready-to-run `dax`, a `confidence` and the `rivals`.
+`definitions` is every competing definition, ranked, for a user who named a model or asked to
+compare; `terms` and `aliases` are the term and its spellings.
 
 Sanity-check it with the lookup the agent will run:
 
 ```dax
-EVALUATE
-CALCULATETABLE(
-    SELECTCOLUMNS('definitions',
-        "rank", 'definitions'[rank], "measure", 'definitions'[name],
-        "model", 'definitions'[owner_item_name], "model_id", 'definitions'[owner_item_id]),
-    'aliases'[alias_norm] = "revenue")
+EVALUATE FILTER('answers', 'answers'[alias_norm] = "revenue")
 ```
 
-A contested term returns several rows, ranked 1..n.
+One row: the answer.
 
 ## 2. The agent
 

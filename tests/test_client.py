@@ -29,7 +29,7 @@ SKILL = os.path.join(CLIENT, "SKILL.md")
 LIMIT = 8000
 HEADROOM = 0.85
 
-_REF = re.compile(r"'(terms|definitions|aliases)'\[(\w+)\]")
+_REF = re.compile(r"'(terms|definitions|aliases|answers)'\[(\w+)\]")
 
 # What the install-free side must never ask of the person asking a question, and must never
 # explain either. `client/` is the answering side; the context already exists, and how it came
@@ -58,7 +58,7 @@ def test_m365_instructions_fit_the_instruction_limit():
 
 
 def test_every_column_either_file_queries_is_published():
-    """Both protocols read the same three published tables, so both are held to the schema."""
+    """Both files read the same published tables, so both are held to the schema."""
     published = {table: set(cols) for table, cols in REQUIRED.items()}
     for table, cols in OPTIONAL.items():
         published.setdefault(table, set()).update(cols)
@@ -74,6 +74,9 @@ def test_every_column_either_file_queries_is_published():
 def test_both_are_told_which_ids_to_run_the_measure_on():
     for path in (M365, SKILL):
         body = _read(path)
+        assert "FILTER('answers', 'answers'[alias_norm]" in body, (
+            os.path.relpath(path, ROOT) + " must read the answer off `answers` first - one "
+            "equality filter, the row is rank 1")
         for column in ("workspace_id", "owner_item_id"):
             assert "'definitions'[" + column + "]" in body, (
                 os.path.relpath(path, ROOT) + " must return " + column + "; without both "

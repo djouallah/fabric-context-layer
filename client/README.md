@@ -49,7 +49,8 @@ for a portal field with an 8,000-character cap.
 
 ## The limit worth knowing first
 
-`context_model` exposes the ranking - `terms`, `definitions`, `aliases` - and nothing else.
+`context_model` exposes the ranking - `answers`, `terms`, `definitions`, `aliases` - and
+nothing else.
 So this side answers *what is revenue*, *what was X for Y*, and *which definition should I
 trust*. It cannot answer *what feeds revenue*, *which reports use it*, or *what is in
 table T*. The skill says so and stops rather than guessing.

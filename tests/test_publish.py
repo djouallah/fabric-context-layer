@@ -21,6 +21,9 @@ REQUIRED = {
                     "endorsement", "modified_at", "n_reports", "n_visuals", "views",
                     "authority", "popularity", "relevance", "freshness", "score", "rank",
                     "conflicting", "n_definitions", "top_margin", "confidence"],
+    "answers": ["alias", "alias_norm", "term_id", "label", "measure", "model", "model_id",
+                "workspace_id", "table_name", "expression", "dax", "confidence", "score",
+                "n_definitions", "conflicting", "rivals"],
     "flow": ["up", "down", "rel"],
     "measure_usage": ["def_id", "report_id", "n_visuals"],
     "item_views": ["item_id", "views"],
@@ -107,6 +110,16 @@ def test_the_ranking_survives_the_round_trip(con, store):
         assert back.execute("SELECT count(*) FROM flow").fetchone()[0] > 0
     finally:
         back.close()
+
+
+def test_the_winner_is_the_same_row_everywhere(con):
+    """`terms.top_def_id` is the rank-1 row, not an arg_max of its own: rank breaks a tie on
+    name and arg_max does not, and answers, the file and the model all have to show the same
+    winner."""
+    off = con.execute("SELECT count(*) FROM terms t JOIN definitions d ON d.def_id = t.top_def_id"
+                      " WHERE d.rank <> 1").fetchone()[0]
+    assert off == 0
+    assert con.execute("SELECT count(*) FROM terms WHERE top_def_id IS NULL").fetchone()[0] == 0
 
 
 def test_confidence_is_decided_here_and_not_by_the_agent(con):
@@ -206,7 +219,7 @@ def test_the_whole_second_half_runs(tmp_path):
     out = build_and_publish(str(work), store, profile=False, wiki=True,
                             log=lambda *_a, **_k: None)
     assert [status for _n, _t, status in out["steps"]] == ["ok"] * 6
-    assert len(out["tables"]) == 13 and out["tables"]["nodes"] > 30
+    assert len(out["tables"]) == 14 and out["tables"]["nodes"] > 30
     assert len(store.list("raw")) > 20            # the next run's incremental starting point
     assert len(store.list("wiki")) > 10
     assert os.path.isfile(os.path.join(store.root, "graph.html"))

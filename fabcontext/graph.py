@@ -10,7 +10,7 @@ The weights are hand-picked, not learned. A popular wrong definition still ranks
 
 Everything this file writes is the published side of the contract with the semantic model
 and client/: the tables nodes, edges, activity, query_usage, query_stats, terms, definitions,
-aliases, item_usage, meta and the views flow, measure_usage, item_views.
+aliases, answers, item_usage, meta and the views flow, measure_usage, item_views.
 
 Nothing is written to disk. `build()` returns an in-memory connection that publish.py
 streams into the lakehouse, and `read_published()` reads those tables back for anything that
@@ -40,7 +40,7 @@ VIEW_WINDOW_DAYS = 28
 FRESHNESS_HALFLIFE_DAYS = 180.0
 
 # Bumped when a published table or column changes shape; context.md prints it.
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 # Activity families. Views are people opening things; runs and queries are people using
 # them another way. The harvest's own calls and storage churn are noise, not usage.
@@ -327,13 +327,15 @@ def _derive(con, aliases: Optional[Dict[str, List[str]]] = None) -> None:
         CREATE OR REPLACE TABLE terms AS
         SELECT term_id,
                -- the winning measure's own name reads better than the normalised id,
-               -- whose tokens are sorted so that word order cannot split a term.
-               arg_max(name, score)                     AS label,
+               -- whose tokens are sorted so that word order cannot split a term. Taken
+               -- from the rank-1 row, not arg_max: rank breaks a tie and arg_max does not,
+               -- and every surface has to agree on the winner.
+               max(CASE WHEN rank = 1 THEN name END)    AS label,
                count(*)                                 AS n_definitions,
                count(DISTINCT expression_norm)          AS n_distinct_expr,
                count(DISTINCT owner_item_id)            AS n_items,
                count(DISTINCT expression_norm) > 1      AS conflicting,
-               arg_max(def_id, score)                   AS top_def_id,
+               max(CASE WHEN rank = 1 THEN def_id END)  AS top_def_id,
                sum(views)                               AS views,
                max(n_reports)                           AS n_reports
           FROM definitions
@@ -353,6 +355,41 @@ def _derive(con, aliases: Optional[Dict[str, List[str]]] = None) -> None:
         for alias in names:
             con.execute("INSERT INTO aliases VALUES (?, ?, ?, 'manual', NULL)",
                         [tid, alias, alias.lower()])
+
+    # --- the answer, pre-picked: one row per spelling, carrying rank 1 -----------------
+    # What a client reads. The ranking above is the reasoning; this is its result, flat, so
+    # that an agent whose only tool is a DAX query needs one equality filter - no join, no
+    # rank to pick, no relationship to ride - and cannot take a different row by accident.
+    con.execute("""
+        CREATE OR REPLACE TABLE answers AS
+        WITH spellings AS (
+            SELECT DISTINCT term_id, alias, alias_norm FROM aliases
+        ), top AS (
+            SELECT * FROM definitions WHERE rank = 1
+        ), others AS (
+            SELECT term_id,
+                   string_agg(name || ' in ' || owner_item_name
+                              || ' (rank ' || rank::VARCHAR || ')', ', ' ORDER BY rank) AS rivals
+              FROM definitions WHERE rank > 1 GROUP BY term_id
+        )
+        SELECT s.alias, s.alias_norm, s.term_id, t.label,
+               d.name                                                     AS measure,
+               d.owner_item_name                                          AS model,
+               d.owner_item_id                                            AS model_id,
+               d.workspace_id,
+               d.table_name,
+               d.expression,
+               'EVALUATE ROW("v", [' || replace(d.name, ']', ']]') || '])' AS dax,
+               d.confidence,
+               round(d.score, 2)                                          AS score,
+               d.n_definitions,
+               d.conflicting,
+               o.rivals
+          FROM spellings s
+          JOIN terms t ON t.term_id = s.term_id
+          JOIN top d   ON d.term_id = s.term_id
+          LEFT JOIN others o ON o.term_id = s.term_id
+         ORDER BY s.term_id, s.alias_norm""")
 
     # Push the rank back onto the edge, so the graph itself carries "defines - ranked #1".
     con.execute("""
@@ -481,7 +518,7 @@ def lineage(con, node_id: str, direction: str = "up", max_depth: int = 12) -> Li
 # What a reader pulls back. `activity` is published - it is the audit log the ranking is
 # derived from, and worth having in the lakehouse - but nothing reads it after the build and
 # it is by far the biggest table, so it stays there.
-READBACK = ("nodes", "edges", "terms", "definitions", "aliases", "item_usage",
+READBACK = ("nodes", "edges", "terms", "definitions", "aliases", "answers", "item_usage",
             "query_usage", "query_stats", "meta",
             "flow", "measure_usage", "item_views")
 
