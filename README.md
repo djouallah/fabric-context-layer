@@ -1,7 +1,8 @@
 # context-layer
 
-There is a lot of talk about context layers these days, and the best way to learn one is to build
-one. This is a toy, but the core ideas turned out to be simple.
+There is a lot of talk about context layers these days. I thought the best way to learn a
+new concept was to try to build one. This is a toy model, but the core ideas are rather
+simple.
 
 - A data platform is full of signals: query history, who opens what, what is certified,
   what is refreshed. That is enough to rank definitions.
@@ -30,21 +31,21 @@ nightly on its own.
 
 
 ```python
-!pip install fabcontext
+%pip install fabcontext
 import fabcontext
 url = fabcontext.harvest("Workspace_A")
 ```
 
-The first call creates the lakehouse; every later one updates it. It returns the URL an
-agent asks against.
+The first call creates the lakehouse - in a workspace called `context_layer` you make
+first - and every later one updates it. It returns the URL an agent asks against.
 
 The ranking, what is harvested, the schema, how to ask, the limits: **[docs/guide.md](docs/guide.md)**.
 
 ## Agent
 
-The agent can be anything - Claude, GitHub Copilot, Scout, Microsoft 365 Copilot. It needs
-two things and installs nothing: a read-only Power BI connection, and the ids of the semantic
-model the harvest published the ranking into. One DAX query asks that model which definition
+The agent can be anything - Claude, GitHub Copilot, Scout, Microsoft 365 Copilot. It installs
+nothing and needs one thing: a read-only Power BI connection. It finds the published ranking
+itself, at an address that is the same in every tenant. One DAX query asks which definition
 wins; a second runs it. One folder per tool: **[agent/](agent/)**.
 
 ## Licence
