@@ -4,8 +4,8 @@ There is a lot of talk about context layers these days. I thought the best way t
 new concept was to try to build one. This is a toy model, but the core ideas are rather
 simple.
 
-- A data platform is full of signals: query history, who opens what, what is certified,
-  what is refreshed. That is enough to rank definitions.
+- A data platform is full of signals: semantic models, query history, who opens what, what
+  is certified, what is refreshed. That is enough to rank definitions.
 - It is very hard to maintain a knowledge graph by hand, and the ones that exist drift. The
   graph has to build itself.
 - The agent has to be stateless and replaceable.
