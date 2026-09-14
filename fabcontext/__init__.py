@@ -24,7 +24,7 @@ import tempfile
 import time
 from typing import Dict, List, Optional, Sequence, Union
 
-__version__ = "0.1.5"
+__version__ = "0.1.6"
 
 __all__ = ["harvest", "build_and_publish", "open_context", "__version__"]
 
