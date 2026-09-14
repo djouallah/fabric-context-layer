@@ -231,44 +231,43 @@ def render(con, out_dir: str, context_md: Optional[str] = None) -> Dict[str, int
 
 def _term_page(w: Wiki, con, term_id: str, label: str, n_defs: int, n_distinct: int,
                conflicting: bool, views: int) -> None:
-    defs = con.execute(
-        "SELECT def_id, rank, name, kind, owner_item_name, table_name, endorsement, "
-        "       views, n_reports, n_visuals, score, expression, description, workspace "
-        "  FROM definitions WHERE term_id = ? ORDER BY rank", [term_id]).fetchall()
+    defs = _dict_rows(con, "SELECT * FROM definitions WHERE term_id = ? ORDER BY rank",
+                      [term_id])
     if not defs:
         return
     top = defs[0]
     body: List[str] = ["# " + label, ""]
 
+    items = {d["owner_item_name"] for d in defs}
     verdict = (str(n_defs) + " definition" + ("s" if n_defs != 1 else "")
-               + " across " + str(len({d[4] for d in defs})) + " item"
-               + ("s" if len({d[4] for d in defs}) != 1 else "") + ". ")
+               + " across " + str(len(items)) + " item" + ("s" if len(items) != 1 else "")
+               + ". ")
     verdict += ("Definitions disagree - " + str(n_distinct) + " different expressions."
                 if conflicting else "All definitions agree.")
     body += [verdict, "",
-             "Ranked first: " + w.link(top[0], top[2]) + " in " + str(top[4])
-             + (" (" + str(top[6]).lower() + ")" if top[6] else "")
-             + ", " + str(top[7]) + " views in the last 28 days.", ""]
+             "Ranked first: " + w.link(top["def_id"], top["name"]) + " in "
+             + str(top["owner_item_name"])
+             + (" (" + str(top["endorsement"]).lower() + ")" if top["endorsement"] else "")
+             + ", " + str(top["views"]) + " views in the last 28 days. Confidence "
+             + str(top["confidence"])
+             + (", leading by " + _fmt(top["top_margin"]) if top["top_margin"] is not None
+                else "") + ".", ""]
 
     aliases = [r[0] for r in con.execute(
         "SELECT DISTINCT alias FROM aliases WHERE term_id = ? ORDER BY 1", [term_id]).fetchall()]
     if len(aliases) > 1:
         body += ["Also known as: " + ", ".join(aliases) + ".", ""]
 
-    body += ["## Ranked definitions", "",
-             "| # | measure | in | endorsement | views | reports | score |",
-             "|---|---------|----|-------------|-------|---------|-------|"]
-    for d in defs:
-        body.append("| " + str(d[1]) + " | " + w.link(d[0], d[2]) + " | " + str(d[4])
-                    + " | " + (str(d[6]) if d[6] else "-") + " | " + str(d[7])
-                    + " | " + str(d[8]) + " | " + str(round(d[10], 2)) + " |")
-    body.append("")
+    body += ["## Ranked definitions", ""]
+    body += _ranked_table(defs, lambda d: w.link(d["def_id"], d["name"]))
 
     body += ["## Expressions", ""]
     for d in defs:
-        body.append("**#" + str(d[1]) + " " + d[2] + "** in " + str(d[4])
-                    + (" - " + d[12] if d[12] else ""))
-        body += ["", "```dax", (d[11] or "(no expression captured)").strip(), "```", ""]
+        body.append("**#" + str(d["rank"]) + " " + d["name"] + "** in "
+                    + str(d["owner_item_name"])
+                    + (" - " + d["description"] if d["description"] else ""))
+        body += ["", "```dax", (d["expression"] or "(no expression captured)").strip(), "```",
+                 ""]
 
     reports = con.execute(
         "SELECT DISTINCT r.id, r.name, coalesce(iv.views, 0) AS views, r.workspace "
@@ -284,7 +283,7 @@ def _term_page(w: Wiki, con, term_id: str, label: str, n_defs: int, n_distinct: 
                  for r in reports]
         body.append("")
 
-    upstream = _upstream_of(w, con, [d[0] for d in defs])
+    upstream = _upstream_of(w, con, [d["def_id"] for d in defs])
     if upstream:
         body += ["## Upstream", ""]
         body += ["- " + w.link(nid) + " (" + kind.replace("_", " ") + ")"
@@ -298,10 +297,10 @@ def _term_page(w: Wiki, con, term_id: str, label: str, n_defs: int, n_distinct: 
 
     w.write("term", term_id, {
         "id": "term:" + term_id, "kind": "term", "name": label,
-        "aliases": (aliases or sorted({d[2] for d in defs}))[:12],
+        "aliases": (aliases or sorted({d["name"] for d in defs}))[:12],
         "tags": ["term"] + (["conflict"] if conflicting else []),
         "definitions": n_defs, "conflicting": bool(conflicting),
-        "views_28d": views, "top": top[2],
+        "views_28d": views, "top": top["name"], "confidence": top["confidence"],
     }, body)
 
 
@@ -693,6 +692,58 @@ MAX_VALUES = 8          # distinct values quoted per column
 MAX_FIELDS = 40         # fields listed per report
 
 
+# The ranked table, on both surfaces: every column of `definitions` a reader can use, in one
+# order under one header. `ELSEWHERE` is what the term section shows outside the table -
+# on the term line, in the definition's heading, as its description and its fenced DAX.
+# `NOT_RENDERED` is the graph's key and the scaffolding the four signals already fold in.
+# tests/test_harvest.py holds `DESCRIBE definitions` to the union of the three, so a published
+# column cannot go quietly unrendered.
+RANKED = [("rank", "rank"), ("name", "measure"), ("owner_item_name", "model"),
+          ("workspace", "workspace"), ("endorsement", "endorsement"),
+          ("confidence", "confidence"), ("score", "score"), ("authority", "authority"),
+          ("popularity", "popularity"), ("relevance", "relevance"), ("freshness", "freshness"),
+          ("views", "views"), ("n_reports", "reports"), ("n_visuals", "visuals"),
+          ("queries", "queries"), ("adhoc_queries", "adhoc"), ("query_users", "users"),
+          ("last_queried", "last queried"), ("modified_at", "modified"), ("owner", "owner")]
+ELSEWHERE = {"term_id", "kind", "table_name", "expression", "description", "owner_item_id",
+             "workspace_id", "conflicting", "n_definitions", "top_margin"}
+NOT_RENDERED = {"def_id", "expression_norm", "exact_term", "owner_usage"}
+# `terms`, likewise: everything on the term line; `top_def_id` is the rank-1 row.
+TERM_LINE = {"term_id", "label", "n_definitions", "n_distinct_expr", "n_items", "conflicting",
+             "views", "n_reports"}
+
+
+def _dict_rows(con, sql: str, params=()) -> List[dict]:
+    cur = con.execute(sql, list(params))
+    names = [d[0] for d in cur.description]
+    return [dict(zip(names, row)) for row in cur.fetchall()]
+
+
+def _fmt(value) -> str:
+    """One table cell from a published value: floats to two places, timestamps to the day,
+    booleans as words, nothing as a dash."""
+    if value is None or value == "":
+        return "-"
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if isinstance(value, float):
+        return str(round(value, 2))
+    if hasattr(value, "isoformat"):
+        return value.isoformat()[:10]
+    return _cell(value)
+
+
+def _ranked_table(rows: List[dict], measure_cell) -> List[str]:
+    """The ranked definitions of one term: every `RANKED` column, one row per definition."""
+    lines = ["| " + " | ".join(header for _column, header in RANKED) + " |",
+             "|" + "|".join("-" * (len(header) + 2) for _column, header in RANKED) + "|"]
+    for row in rows:
+        lines.append("| " + " | ".join(measure_cell(row) if column == "name"
+                                       else _fmt(row.get(column))
+                                       for column, _header in RANKED) + " |")
+    return lines + [""]
+
+
 def _cell(value, limit: int = 200) -> str:
     """One markdown table cell. A pipe or a newline inside a harvested name would end the
     row early, so both are neutralised here - and DAX never goes in a cell at all."""
@@ -824,6 +875,11 @@ one defined inside a single report), **popularity** (how often the measure was a
 evaluated, plus report opens and model refreshes), **relevance** (reports and visuals
 referencing it, plus an exact name match) and **freshness**. Take rank 1 and say so.
 
+Every row of a term's table carries the four signals, its `score` and a `confidence` -
+high, medium or low, decided here from how clearly rank 1 leads and whether its model is
+used. Read it off the rank 1 row; do not re-derive it from the scores. The term line
+carries `margin`, rank 1's lead over rank 2.
+
 **Rank is not correctness.** A popular, certified, wrong definition still ranks first.
 {conf} terms here have definitions that disagree; when one of them is the answer, disclose
 it in one line - which definition you used and that the others differ - rather than handing
@@ -864,13 +920,9 @@ def _context_terms(w: Wiki, con) -> List[str]:
         "       views, n_reports FROM terms ORDER BY views DESC, term_id").fetchall()
     if not terms:
         return []
-    defs: Dict[str, List[tuple]] = defaultdict(list)
-    for row in con.execute(
-            "SELECT term_id, rank, def_id, name, kind, owner_item_id, owner_item_name, "
-            "       workspace, table_name, endorsement, views, n_reports, queries, score, "
-            "       expression, description FROM definitions ORDER BY term_id, rank"
-    ).fetchall():
-        defs[row[0]].append(row)
+    defs: Dict[str, List[dict]] = defaultdict(list)
+    for row in _dict_rows(con, "SELECT * FROM definitions ORDER BY term_id, rank"):
+        defs[row["term_id"]].append(row)
     aliases: Dict[str, List[str]] = defaultdict(list)
     for term_id, alias in con.execute(
             "SELECT DISTINCT term_id, alias FROM aliases ORDER BY 1, 2").fetchall():
@@ -886,51 +938,47 @@ def _context_terms(w: Wiki, con) -> List[str]:
         reports[term_id].append((name, workspace, views))
 
     lines = ["## Terms (" + str(len(terms)) + ")", "",
-             "| term | label | definitions | conflicting | rank 1 | in | views 28d |",
-             "|------|-------|-------------|-------------|--------|----|-----------|"]
+             "| term | label | definitions | conflicting | rank 1 | in | confidence | views 28d |",
+             "|------|-------|-------------|-------------|--------|----|------------|-----------|"]
     for term_id, label, n_defs, _nd, _ni, conflicting, views, _nr in terms:
-        top = (defs.get(term_id) or [(None,) * 16])[0]
+        top = (defs.get(term_id) or [{}])[0]
         lines.append("| " + _cell(term_id) + " | " + _cell(label or term_label(term_id))
                      + " | " + str(n_defs) + " | " + ("yes" if conflicting else "")
-                     + " | " + _cell(top[3]) + " | " + _cell(top[6])
-                     + " | " + str(views) + " |")
+                     + " | " + _cell(top.get("name")) + " | " + _cell(top.get("owner_item_name"))
+                     + " | " + _cell(top.get("confidence")) + " | " + str(views) + " |")
     lines.append("")
 
     for term_id, label, n_defs, n_distinct, n_items, conflicting, views, n_reports in terms:
         rows = defs.get(term_id) or []
         if not rows:
             continue
+        top = rows[0]
         lines += ["### term: " + term_id, "",
                   "label: " + str(label or term_label(term_id))
                   + " | definitions: " + str(n_defs) + " across " + str(n_items) + " items"
                   + " | conflicting: " + ("yes, " + str(n_distinct) + " distinct expressions"
                                           if conflicting else "no, all agree")
-                  + " | views 28d: " + str(views) + " | reports: " + str(n_reports), ""]
+                  + " | views 28d: " + str(views) + " | reports: " + str(n_reports)
+                  + " | confidence: " + _fmt(top["confidence"])
+                  + " | margin: " + _fmt(top["top_margin"]), ""]
         if len(aliases.get(term_id, [])) > 1:
             lines += ["also known as: " + ", ".join(aliases[term_id]), ""]
-        lines += ["| rank | measure | model | workspace | endorsement | score | views | "
-                  "reports | queries |",
-                  "|------|---------|-------|-----------|-------------|-------|-------|"
-                  "---------|---------|"]
+        lines += _ranked_table(rows, lambda r: _cell(r["name"]))
         for r in rows:
-            lines.append("| " + str(r[1]) + " | " + _cell(r[3]) + " | " + _cell(r[6])
-                         + " | " + _cell(r[7]) + " | " + (_cell(r[9]) if r[9] else "-")
-                         + " | " + str(round(r[13] or 0, 2)) + " | " + str(r[10] or 0)
-                         + " | " + str(r[11] or 0) + " | " + str(r[12] or 0) + " |")
-        lines.append("")
-        for r in rows:
-            lines += ["#### " + str(r[1]) + ". " + str(r[3]) + " - " + str(r[6])
-                      + " (" + str(r[5]) + ")"
-                      + (", table " + str(r[8]) if r[8] else "")
-                      + (" - defined inside a report" if r[4] == "report_measure" else ""), ""]
-            if r[15]:
-                lines += [str(r[15]).replace("\n", " "), ""]
-            lines += _fence(r[14]) + [""]
+            lines += ["#### " + str(r["rank"]) + ". " + str(r["name"]) + " - "
+                      + str(r["owner_item_name"]) + " (" + str(r["owner_item_id"])
+                      + " in workspace " + str(r["workspace_id"]) + ")"
+                      + (", table " + str(r["table_name"]) if r["table_name"] else "")
+                      + (" - defined inside a report" if r["kind"] == "report_measure" else ""),
+                      ""]
+            if r["description"]:
+                lines += [str(r["description"]).replace("\n", " "), ""]
+            lines += _fence(r["expression"]) + [""]
         if reports.get(term_id):
             lines += ["used in reports: "
                       + ", ".join(str(n) + " (" + str(v) + " views)"
                                   for n, _ws, v in reports[term_id][:20]), ""]
-        upstream = _upstream_of(w, con, [r[2] for r in rows])
+        upstream = _upstream_of(w, con, [r["def_id"] for r in rows])
         if upstream:
             lines += ["upstream: " + ", ".join(_ref(w, nid) for nid, _kind in upstream), ""]
     return lines

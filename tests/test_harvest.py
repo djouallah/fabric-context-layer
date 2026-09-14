@@ -270,6 +270,8 @@ def test_the_term_page_shows_the_conflict(wiki_dir):
     assert "disagree" in text
     assert "```dax" in text
     assert "Sales Overview" in text
+    assert "Confidence high" in text
+    assert "| confidence | score | authority |" in text     # the same table as context.md
 
 
 def test_a_demoted_table_still_appears_on_its_store_page(wiki_dir):
@@ -319,6 +321,26 @@ def test_context_md_ranks_the_competing_definitions(context_md):
     assert section.index("Total Revenue") < section.index("Finance Model")
     assert section.count("```dax") == 3       # every definition's expression, not just rank 1
     assert "SUM ( Sales[Amount] )" in section
+    # The file is the layer in full: the verdict and its reasoning, not the verdict alone.
+    assert "| confidence | score | authority | popularity | relevance | freshness |" in section
+    assert "| confidence: high | margin: " in section
+    assert MODEL_A + " in workspace " + WS in section
+
+
+def test_context_md_carries_every_published_column(con):
+    """context.md is the context layer in full. A column that lands in `definitions` or
+    `terms` is rendered - in the ranked table, or on the term's own lines - or is named in
+    wiki.py as the key or the scaffolding the four signals already fold in. Nothing is
+    quietly left out, and nothing named there has quietly gone."""
+    from fabcontext import wiki
+
+    published = {row[0] for row in con.execute("DESCRIBE definitions").fetchall()}
+    rendered = {column for column, _header in wiki.RANKED} | wiki.ELSEWHERE
+    assert published == rendered | wiki.NOT_RENDERED, (
+        "unrendered: " + str(sorted(published - rendered - wiki.NOT_RENDERED))
+        + ", stale: " + str(sorted((rendered | wiki.NOT_RENDERED) - published)))
+    terms = {row[0] for row in con.execute("DESCRIBE terms").fetchall()}
+    assert terms == wiki.TERM_LINE | {"top_def_id"}, terms
 
 
 def test_context_md_carries_what_a_dax_call_needs(context_md):

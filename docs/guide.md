@@ -39,6 +39,11 @@ ranking taken off a model nobody opens is not a high-confidence number. The one 
 the caller is whether the term it matched is a loose fit for the question actually asked -
 that is a property of the question, and nothing in the tenant can know it.
 
+`context.md` and the wiki's term page render every column of `definitions` and `terms` - the
+four signals, the score, the confidence, the margin, the usage - in one table under one
+header; `tests/test_harvest.py` holds the file to the published columns, so nothing is
+quietly left out.
+
 ## Run it
 
 Two lines in a Fabric notebook:

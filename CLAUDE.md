@@ -23,7 +23,8 @@ only thing: the ranking, curated. There is no other client path - no CLI, no fet
 markdown, no SQL, no database driver. A number comes from DAX calling a ranked measure by
 name, or it does not come: a table no semantic model covers has nothing in the tenant that
 agrees what its number means, so the answer is to say that, not to compute one and imply a
-definition nobody wrote.
+definition nobody wrote. `tests/test_harvest.py::test_context_md_carries_every_published_column`
+holds `context.md` to every column `definitions` and `terms` publish.
 
 **The repo holds Python and no data.** One lakehouse holds everything: the ranked graph as
 Delta tables under `Tables/`, and `raw/`, `build/`, `wiki/` and `graph.html` under `Files/`.
